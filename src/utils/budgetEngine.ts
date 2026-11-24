@@ -55,18 +55,24 @@ export function calculateCycleBudgetMetrics(
   const todayAllowance = mode === 'redistribute'
     ? floorMoney((spendableLivingPool - pastSpent) / remainingDays)
     : floorMoney(Math.min(baseDailyAllowance, (spendableLivingPool - pastSpent) / remainingDays));
-  const walletLimit = accounts ? floorMoney(accounts.filter(a => a.type !== 'savings').reduce((s, a) => s + a.balance, 0) - Math.max(0, config.fixedBills - fixedPaid) - Math.max(0, config.savingsTarget - savingsMoved) - plannedReserveTotal) : Infinity;
-  const todayDelta = Math.min(todayAllowance - todaySpent, walletLimit);
+  const walletTotal = accounts ? accounts.filter(a => a.type !== 'savings').reduce((s, a) => s + a.balance, 0) : Infinity;
+  const walletReserved = Math.max(0, config.fixedBills - fixedPaid) + Math.max(0, config.savingsTarget - savingsMoved) + plannedReserveTotal;
+  const walletLimit = accounts ? floorMoney(walletTotal - walletReserved) : Infinity;
+  // Cap daily allowance by actual spendable wallet balance spread over remaining days
+  const walletBasedDailyLimit = walletLimit < Infinity ? floorMoney(walletLimit / remainingDays) : Infinity;
+  const effectiveTodayAllowance = Math.min(todayAllowance, walletBasedDailyLimit);
+  const todayDelta = floorMoney(effectiveTodayAllowance - todaySpent);
   const futureDaysCount = remainingDays - 1;
-  const futureDailyAllowance = futureAllowance(mode, remainingLivingBudget, futureDaysCount, baseDailyAllowance);
-  const status = todayDelta < 0 ? 'overspent' : todaySpent >= todayAllowance * .8 ? 'caution' : 'safe';
+  const effectiveFutureRemaining = floorMoney(walletLimit - effectiveTodayAllowance);
+  const futureDailyAllowance = futureAllowance(mode, Math.min(remainingLivingBudget, effectiveFutureRemaining), futureDaysCount, baseDailyAllowance);
+  const status = todayDelta < 0 ? 'overspent' : todaySpent >= effectiveTodayAllowance * .8 ? 'caution' : 'safe';
   const days: CalendarDaySummary[] = Array.from({ length: totalCycleDays }, (_, i) => {
-    const allowance = i < todayIndex ? baseDailyAllowance : i === todayIndex ? todayAllowance : futureDailyAllowance;
+    const allowance = i < todayIndex ? baseDailyAllowance : i === todayIndex ? effectiveTodayAllowance : futureDailyAllowance;
     const spent = spentOn(i);
     const delta = allowance - spent;
     return { dayIndex: i, ...getCycleDateInfo(i, config.paydayDay), phase: i < todayIndex ? 'past' : i === todayIndex ? 'today' : 'future', allowance, spent, delta, status: i > todayIndex ? 'future' : delta < 0 ? 'overspent' : 'safe', transactions: current.filter(t => t.cycleDayIndex === i) };
   });
-  return { totalLivingBudget, plannedReserveTotal, spendableLivingPool, totalSpentCycle, remainingLivingBudget, todayAllowance, todaySpent, todayDelta, todayStatus: status, futureDaysCount, futureDailyAllowance, redistributionPerDay: futureDailyAllowance - baseDailyAllowance, pastSafeSurplusTotal: Math.max(0, pastDelta), days, baseDailyAllowance, rolloverMode: mode, pastSpent, walletLimit };
+  return { totalLivingBudget, plannedReserveTotal, spendableLivingPool, totalSpentCycle, remainingLivingBudget, todayAllowance: effectiveTodayAllowance, todaySpent, todayDelta, todayStatus: status, futureDaysCount, futureDailyAllowance, redistributionPerDay: futureDailyAllowance - baseDailyAllowance, pastSafeSurplusTotal: Math.max(0, pastDelta), days, baseDailyAllowance, rolloverMode: mode, pastSpent, walletLimit };
 }
 function futureAllowance(mode: RolloverMode, remaining: number, days: number, baseline: number) {
   if (days <= 0) return 0;
