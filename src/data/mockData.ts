@@ -389,48 +389,17 @@ export const INITIAL_GOALS: SavingsGoal[] = [
 ];
 
 export const INITIAL_SHARED_GROUP: Omit<SharedGroup, 'id' | 'ownerUid' | 'memberUids'> = {
-  name: 'Our Little Home',
-  typeLabel: 'Couple · Ngọc & Minh',
-  monthlyBudget: 5000000,
+  name: 'Quỹ chung',
+  typeLabel: 'Cá nhân',
+  monthlyBudget: 0,
+  members: [],
   sharedGoal: {
-    title: 'Quỹ du lịch Đà Lạt',
-    saved: 4200000,
-    target: 8000000,
+    title: '',
+    saved: 0,
+    target: 0,
   },
-  expenses: [
-    {
-      id: 'se-1',
-      title: 'Đi siêu thị thực phẩm tuần',
-      amount: 850000,
-      paidBy: 'ngoc',
-      splitMode: '50/50',
-      ngocShareRatio: 0.5,
-      date: '18/11',
-    },
-    {
-      id: 'se-2',
-      title: 'Mua đồ dùng bếp & gia vị',
-      amount: 600000,
-      paidBy: 'ngoc',
-      splitMode: '50/50',
-      ngocShareRatio: 0.5,
-      date: '14/11',
-    },
-    {
-      id: 'se-3',
-      title: 'Ăn tối cuối tuần & tiền chợ',
-      amount: 1050000,
-      paidBy: 'minh',
-      splitMode: '50/50',
-      ngocShareRatio: 0.5,
-      date: '10/11',
-    },
-  ],
-  activities: [
-    'Ngọc đã ghi nhận 850.000 đ tiền đi siêu thị (chia đôi 50/50).',
-    'Minh đã ghi nhận 1.050.000 đ chi phí ăn uống tuần trước.',
-    'Ngân sách ăn uống chung hiện còn 2.500.000 đ.',
-  ],
+  expenses: [],
+  activities: [],
 };
 
 export const INITIAL_RECURRING_BILLS: RecurringBill[] = [

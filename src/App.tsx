@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import {
   AlertTriangle,
+  CalendarCheck,
   CalendarDays,
   ChevronRight,
   Home,
@@ -15,6 +16,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { DepositModal } from './components/DepositModal';
 import { HeroPassbookCard } from './components/HeroPassbookCard';
 import { OnboardingSetup } from './components/OnboardingSetup';
+import { PaydayModal } from './components/PaydayModal';
 const PlanView = lazy(() => import('./components/PlanView').then(m => ({ default: m.PlanView })));
 import type { QrDraft } from './components/QrPaymentDrawer';
 const QrPaymentDrawer = lazy(() => import('./components/QrPaymentDrawer').then(m => ({ default: m.QrPaymentDrawer })));
@@ -30,6 +32,7 @@ import {
   addPlannedExpense,
   cancelPendingTransactionWithRefund,
   completePlannedExpense,
+  confirmPaydayCycle,
   confirmPendingTransaction,
   createPendingTransactionWithHold,
   deleteTransactionAndRestoreWallet,
@@ -48,10 +51,17 @@ import {
   sweepSurplusToSavings,
   transferInternalWallets,
   updateSharedGroupDoc,
+  sendGroupInvitation,
+  acceptGroupInvitation,
+  declineGroupInvitation,
+  subscribePendingInvitations,
+  addSharedExpense,
+  removeMemberFromGroup,
 } from './services/firestoreService';
 import {
   Account,
   CategoryId,
+  GroupInvitation,
   LicenseKey,
   PausedItem,
   PlannedExpense,
@@ -122,6 +132,7 @@ export default function App() {
     id: 'group-local',
     ownerUid: 'local',
     memberUids: ['local'],
+    members: [],
     name: 'Quỹ chung',
     typeLabel: 'Cá nhân',
     monthlyBudget: 0,
@@ -129,6 +140,7 @@ export default function App() {
     expenses: [],
     activities: [],
   });
+  const [pendingInvitations, setPendingInvitations] = useState<GroupInvitation[]>([]);
   const [recurringBills, setRecurringBills] = useState<RecurringBill[]>([]);
   const [licenseKeys, setLicenseKeys] = useState<LicenseKey[]>([]);
 
@@ -154,6 +166,11 @@ export default function App() {
 
   // Deposit Modal State
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [txFilter, setTxFilter] = useState<'all' | 'today' | 'expense' | 'income'>('all');
+
+  // Payday Check-in Modal State
+  const [isPaydayModalOpen, setIsPaydayModalOpen] = useState(false);
+  const [paydayDismissedKey, setPaydayDismissedKey] = useState<string | null>(null);
 
   const notify = (text: string, tone: 'safe' | 'caution' | 'neutral' = 'safe') => {
     setStatusMessage({ text, tone });
@@ -203,7 +220,7 @@ export default function App() {
           onPaused: (p) => setPausedItems(p),
           onGroup: (grp) => {
             if (grp) setSharedGroup(grp);
-            else setSharedGroup({ id: `group-${user.uid}`, ownerUid: user.uid, memberUids: [user.uid], name: 'Quỹ chung', typeLabel: 'Cá nhân', monthlyBudget: 0, sharedGoal: { title: '', saved: 0, target: 0 }, expenses: [], activities: [] });
+            else setSharedGroup({ id: `group-${user.uid}`, ownerUid: user.uid, memberUids: [user.uid], members: [], name: 'Quỹ chung', typeLabel: 'Cá nhân', monthlyBudget: 0, sharedGoal: { title: '', saved: 0, target: 0 }, expenses: [], activities: [] });
           },
           onError: (err) => {
             setDataReady(true);
@@ -213,7 +230,11 @@ export default function App() {
             }
           },
         });
-        subCleanup = subs.unsubscribeAll;
+
+        // Subscribe to pending invitations for this user
+        const unsubInvites = subscribePendingInvitations(user.email || '', setPendingInvitations);
+        const originalCleanup = subs.unsubscribeAll;
+        subCleanup = () => { originalCleanup(); unsubInvites(); };
       } catch (err: unknown) {
         if (current !== generation) return;
         setFirestoreBlocked(true);
@@ -338,7 +359,19 @@ export default function App() {
     return mutate(uid => transferInternalWallets(uid, fromId, toId, amount, tx), 'Đã ghi chuyển tiền giữa các ví.');
   };
   const handleDepositWallet = async (id: string, amount: number) => mutate(uid => depositToWallet(uid, id, amount, salaryConfig.todayIndex), 'Đã ghi tiền thực nhận vào ví.');
+  const handleConfirmPayday = async (payload: Parameters<typeof confirmPaydayCycle>[1]) =>
+    mutate(
+      uid => confirmPaydayCycle(uid, payload),
+      `Đã nạp ${formatVND(payload.depositAmount)} và sắp xếp hạn mức chu kỳ mới.`
+    );
   const handleCompleteOnboarding = async (config: { salaryConfig: typeof BLANK_SALARY_CONFIG; wallets: Account[] }) => mutate(uid => setupInitialFinance(uid, config.salaryConfig, config.wallets), 'Đã lưu thiết lập Ví An.');
+
+  const needsPaydayCheckin =
+    dataReady &&
+    accounts.length > 0 &&
+    salaryConfig.monthlyIncome > 0 &&
+    profile.lastPaydayConfirmedCycleKey !== cycle.key &&
+    (cycle.todayIndex === 0 || Boolean(profile.lastPaydayConfirmedCycleKey));
 
   if (!authReady || (authUser && !dataReady)) {
     return (
@@ -357,7 +390,7 @@ export default function App() {
 
   // If user hasn't set up income yet, show simple onboarding setup
   if (!firestoreBlocked && accounts.length === 0) {
-    return <OnboardingSetup onComplete={handleCompleteOnboarding} backupAvailable={Boolean(profile.financeTestBackup)} onRestore={() => mutate(uid => restoreTestFinanceBackup(uid), 'Đã khôi phục dữ liệu trước khi thử.')} />;
+    return <OnboardingSetup onComplete={handleCompleteOnboarding} />;
   }
 
   return (
@@ -481,6 +514,41 @@ export default function App() {
           </div>
         )}
 
+        {/* PAYDAY REMINDER BANNER */}
+        {needsPaydayCheckin && paydayDismissedKey !== cycle.key && (
+          <div className="px-3.5 sm:px-6 pt-3">
+            <div className="bg-[var(--brand-light)] border border-[var(--brand)] rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <CalendarCheck className="w-4 h-4 text-[var(--brand)] shrink-0 mt-0.5" />
+                <div className="text-xs">
+                  <p className="font-semibold text-[var(--ink-primary)]">
+                    Đã đến ngày nhận lương chu kỳ mới!
+                  </p>
+                  <p className="text-[var(--ink-muted)] mt-0.5">
+                    Vui lòng nạp tiền lương và cập nhật mục tiêu tiết kiệm để Ví An sắp xếp hạn mức chi tiêu hợp lý.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsPaydayModalOpen(true)}
+                  className="tap-scale px-3 py-1.5 rounded-xl bg-[var(--brand)] text-[var(--tone-white)] text-xs font-semibold cursor-pointer"
+                >
+                  Nạp lương & chia hạn mức
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaydayDismissedKey(cycle.key)}
+                  className="px-3 py-1.5 rounded-xl bg-[var(--tone-white)] border border-[var(--border-hairline)] text-[var(--ink-muted)] text-xs font-semibold cursor-pointer"
+                >
+                  Để sau
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* MAIN VIEWPORT */}
         <Suspense fallback={<p className="p-6" role="status">Đang mở…</p>}>
         <main id="main-content" className="flex-1 px-3.5 sm:px-6 pt-4 w-full overflow-x-hidden">
@@ -573,12 +641,36 @@ export default function App() {
 
                 {/* Recent Transactions Card */}
                 <section className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 min-w-0 w-full overflow-hidden">
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-2.5">
                     <h2 className="text-sm font-semibold text-[var(--ink-primary)]">
                       Giao dịch gần đây
                     </h2>
                     <span className="text-xs text-[var(--ink-muted)]">Đã đồng bộ</span>
                   </div>
+
+                  {transactions.length > 0 && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-2.5 mb-1">
+                      {[
+                        { id: 'all', label: 'Tất cả' },
+                        { id: 'today', label: 'Hôm nay' },
+                        { id: 'expense', label: 'Chi tiêu' },
+                        { id: 'income', label: 'Thu nhập' },
+                      ].map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setTxFilter(f.id as 'all' | 'today' | 'expense' | 'income')}
+                          className={`tap-scale px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap border cursor-pointer transition ${
+                            txFilter === f.id
+                              ? 'bg-[var(--ink-primary)] text-[var(--tone-white)] border-[var(--ink-primary)]'
+                              : 'bg-[var(--bg-paper)] text-[var(--ink-muted)] border-[var(--border-hairline)]'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   {transactions.length === 0 ? (
                     <div className="py-8 text-center space-y-1">
@@ -589,7 +681,15 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="divide-y divide-[var(--border-hairline)]">
-                      {transactions.slice(0, 6).map((tx) => {
+                      {transactions
+                        .filter((tx) => {
+                          if (txFilter === 'today') return tx.cycleDayIndex === salaryConfig.todayIndex;
+                          if (txFilter === 'expense') return tx.type === 'expense';
+                          if (txFilter === 'income') return tx.type === 'income';
+                          return true;
+                        })
+                        .slice(0, 6)
+                        .map((tx) => {
                         const catLabel =
                           tx.type === 'income' ? 'Thu nhập' : tx.type === 'internal'
                             ? 'Chuyển nội bộ'
@@ -623,7 +723,9 @@ export default function App() {
 
                             <span
                               className={`text-sm font-semibold tabular-nums shrink-0 ${
-                                tx.type === 'internal'
+                                tx.type === 'income'
+                                  ? 'text-[var(--brand)]'
+                                  : tx.type === 'internal'
                                   ? 'text-[var(--ink-muted)]'
                                   : isPending
                                   ? 'text-[var(--tone-caution)]'
@@ -696,53 +798,47 @@ export default function App() {
             <div key="view-group" className="max-w-2xl mx-auto animate-page-enter">
               <SharedGroupView
                 group={sharedGroup}
-                onAddExpense={(payload) => {
-                  const payerName = payload.paidBy === 'ngoc' ? 'Ngọc' : 'Minh';
-                  const ngocRatio = payload.splitMode === '50/50' ? 0.5 : 0.6;
-                  const nextGroup: SharedGroup = {
-                    ...sharedGroup,
-                    expenses: [
-                      {
-                        id: `se-${Date.now()}`,
-                        title: payload.title,
-                        amount: payload.amount,
-                        paidBy: payload.paidBy,
-                        splitMode: payload.splitMode,
-                        ngocShareRatio: ngocRatio,
-                        date: 'Hôm nay',
-                      },
-                      ...sharedGroup.expenses,
-                    ],
-                    activities: [
-                      `${payerName} vừa thêm ${formatVND(payload.amount)} cho "${payload.title}" (${payload.splitMode}).`,
-                      ...sharedGroup.activities,
-                    ],
-                  };
-                  void mutate(() => updateSharedGroupDoc(nextGroup), 'Đã ghi nhận khoản chi chung.');
+                currentUid={authUser?.uid || ''}
+                pendingInvitations={pendingInvitations}
+                onSendInvite={async (toEmail) => {
+                  await sendGroupInvitation(authUser!.uid, profile.displayName, sharedGroup.id, toEmail);
+                  notify(`Đã gửi lời mời tới ${toEmail}.`, 'safe');
                 }}
-                onSettleBalance={(payer, settleAmount) => {
-                  const payerName = payer === 'minh' ? 'Minh' : 'Ngọc';
-                  const receiverName = payer === 'minh' ? 'Ngọc' : 'Minh';
-                  const nextGroup: SharedGroup = {
-                    ...sharedGroup,
-                    expenses: [
-                      ...sharedGroup.expenses,
-                      {
-                        id: `se-settle-${Date.now()}`,
-                        title: `Tất toán cân bằng cho ${receiverName}`,
-                        amount: settleAmount,
-                        paidBy: payer,
-                        splitMode: '100%',
-                        ngocShareRatio: payer === 'minh' ? 1 : 0,
-                        date: 'Hôm nay',
-                      },
-                    ],
-                    activities: [
-                      `${payerName} đã chuyển hoàn ${formatVND(settleAmount)} cho ${receiverName}.`,
-                      ...sharedGroup.activities,
-                    ],
+                onAcceptInvite={async (invitationId) => {
+                  await acceptGroupInvitation(invitationId, {
+                    uid: authUser!.uid,
+                    displayName: profile.displayName,
+                    email: authUser!.email || '',
+                  });
+                  notify('Đã tham gia quỹ chung!', 'safe');
+                }}
+                onDeclineInvite={async (invitationId) => {
+                  await declineGroupInvitation(invitationId);
+                  notify('Đã từ chối lời mời.', 'caution');
+                }}
+                onAddExpense={async (expenseData) => {
+                  const expense = {
+                    ...expenseData,
+                    id: `se-${Date.now()}`,
+                    date: new Date().toLocaleDateString('vi-VN'),
                   };
-                  void mutate(() => updateSharedGroupDoc(nextGroup), 'Đã ghi nhận thanh toán quỹ chung.');
+                  const payer = sharedGroup.members?.find(m => m.uid === expenseData.paidByUid);
+                  const label = `${payer?.displayName || 'Thành viên'} thêm ${formatVND(expenseData.amount)} cho "${expenseData.title}"`;
+                  await addSharedExpense(sharedGroup.id, expense, label);
+                  notify('Đã ghi nhận khoản chi chung.', 'safe');
+                }}
+                onRemoveMember={async (targetUid) => {
+                  await removeMemberFromGroup(sharedGroup.id, authUser!.uid, targetUid);
+                  notify('Đã xóa thành viên khỏi nhóm.', 'safe');
+                }}
+                onUpdateBudget={async (budget) => {
+                  const next = { ...sharedGroup, monthlyBudget: budget };
+                  await updateSharedGroupDoc(next);
+                  notify('Đã cập nhật ngân sách nhóm.', 'safe');
+                }}
+                onUpdateGoal={async (title, target) => {
+                  const next = { ...sharedGroup, sharedGoal: { ...sharedGroup.sharedGoal, title, target } };
+                  await updateSharedGroupDoc(next);
                 }}
               />
             </div>
@@ -754,10 +850,12 @@ export default function App() {
               <AccountView
                 profile={profile}
                 salaryConfig={salaryConfig}
+                rolloverMode={rolloverMode}
                 accounts={accounts}
                 recurringBills={recurringBills}
                 licenseKeys={licenseKeys}
                 onUpdateSalaryConfig={next => { void mutate(uid => saveSalarySettings(uid, next, rolloverMode), 'Đã lưu kế hoạch ngân sách.'); }}
+                onChangeRolloverMode={mode => { void mutate(uid => saveSalarySettings(uid, salaryConfig, mode), 'Đã cập nhật cách chia ngân sách.'); }}
                 onToggleBillPaid={(billId) =>
                   setRecurringBills((prev) =>
                     prev.map((b) => (b.id === billId ? { ...b, paid: !b.paid } : b))
@@ -903,6 +1001,16 @@ export default function App() {
           accounts={accounts}
           onClose={() => setIsDepositModalOpen(false)}
           onDeposit={handleDepositWallet}
+        />
+
+        {/* Payday Check-in Modal */}
+        <PaydayModal
+          isOpen={isPaydayModalOpen}
+          accounts={accounts}
+          salaryConfig={salaryConfig}
+          cycleKey={cycle.key}
+          onClose={() => setIsPaydayModalOpen(false)}
+          onConfirm={handleConfirmPayday}
         />
       </div>
     </div>

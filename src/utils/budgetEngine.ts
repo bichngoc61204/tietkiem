@@ -33,6 +33,8 @@ export function calculateCycleBudgetMetrics(
 ): CycleBudgetMetrics {
   const totalCycleDays = Math.max(1, Math.floor(config.totalCycleDays));
   const todayIndex = Math.min(totalCycleDays - 1, Math.max(0, Math.floor(config.todayIndex)));
+  const cycleStartDayIndex = Math.min(todayIndex, Math.max(0, Math.floor(config.cycleStartDayIndex || 0)));
+  const activeCycleDays = Math.max(1, totalCycleDays - cycleStartDayIndex);
   const current = transactionsInCycle(transactions, config.paydayDay);
   const paidPlans = new Set(current.filter(t => t.plannedExpenseId).map(t => t.plannedExpenseId));
   const reservedPlans = plans.filter(p => !p.completed || paidPlans.has(p.id));
@@ -47,11 +49,12 @@ export function calculateCycleBudgetMetrics(
   const totalSpentCycle = current.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const livingSpent = dailyExpenses.reduce((s, t) => s + t.amount, 0);
   const remainingLivingBudget = floorMoney(spendableLivingPool - livingSpent);
-  const baseDailyAllowance = floorMoney(spendableLivingPool / totalCycleDays);
+  const baseDailyAllowance = floorMoney(spendableLivingPool / activeCycleDays);
   const pastSpent = dailyExpenses.filter(t => t.cycleDayIndex < todayIndex).reduce((s, t) => s + t.amount, 0);
   const todaySpent = spentOn(todayIndex);
   const remainingDays = totalCycleDays - todayIndex;
-  const pastDelta = todayIndex * baseDailyAllowance - pastSpent;
+  const activePastDays = Math.max(0, todayIndex - cycleStartDayIndex);
+  const pastDelta = activePastDays * baseDailyAllowance - pastSpent;
   // Raw daily allowance from salary config
   const configDailyAllowance = mode === 'redistribute'
     ? floorMoney((spendableLivingPool - pastSpent) / remainingDays)
@@ -61,18 +64,27 @@ export function calculateCycleBudgetMetrics(
   const walletLimit = walletTotal; // raw balance - no reservation subtraction here
   // If wallet is tighter than budget config, spread wallet evenly over remaining days
   const walletDailyLimit = walletTotal < Infinity && walletTotal < spendableLivingPool - livingSpent
-    ? floorMoney(walletTotal / remainingDays)
+    ? floorMoney((walletTotal + todaySpent) / remainingDays)
     : Infinity;
   const todayAllowance = Math.min(configDailyAllowance, walletDailyLimit);
-  const todayDelta = floorMoney(todayAllowance - todaySpent);
+  const todayDelta = Math.floor(todayAllowance - todaySpent);
   const futureDaysCount = remainingDays - 1;
-  const futureDailyAllowance = futureAllowance(mode, Math.min(remainingLivingBudget, walletTotal < spendableLivingPool - livingSpent ? walletTotal - todayAllowance : remainingLivingBudget), futureDaysCount, baseDailyAllowance);
+  const futureRemainingCap = walletTotal < spendableLivingPool - livingSpent
+    ? floorMoney(walletTotal - Math.max(0, todayAllowance - todaySpent))
+    : remainingLivingBudget;
+  const futureDailyAllowance = futureAllowance(mode, Math.min(remainingLivingBudget, futureRemainingCap), futureDaysCount, baseDailyAllowance);
   const status = todayDelta < 0 ? 'overspent' : todaySpent >= todayAllowance * .8 ? 'caution' : 'safe';
   const days: CalendarDaySummary[] = Array.from({ length: totalCycleDays }, (_, i) => {
-    const allowance = i < todayIndex ? baseDailyAllowance : i === todayIndex ? todayAllowance : futureDailyAllowance;
     const spent = spentOn(i);
-    const delta = allowance - spent;
-    return { dayIndex: i, ...getCycleDateInfo(i, config.paydayDay), phase: i < todayIndex ? 'past' : i === todayIndex ? 'today' : 'future', allowance, spent, delta, status: i > todayIndex ? 'future' : delta < 0 ? 'overspent' : 'safe', transactions: current.filter(t => t.cycleDayIndex === i) };
+    const hasActivity = current.some(t => t.cycleDayIndex === i);
+    // Past days before user started or with no recorded activity = untracked, show neutral "-" not fake surplus
+    const isUntrackedPast = i < todayIndex && (i < cycleStartDayIndex || !hasActivity);
+    const allowance = isUntrackedPast
+      ? 0
+      : i < todayIndex ? baseDailyAllowance : i === todayIndex ? todayAllowance : futureDailyAllowance;
+    const delta = isUntrackedPast ? 0 : Math.floor(allowance - spent);
+    const phase = i < todayIndex ? (isUntrackedPast ? 'untracked' as const : 'past' as const) : i === todayIndex ? 'today' as const : 'future' as const;
+    return { dayIndex: i, ...getCycleDateInfo(i, config.paydayDay), phase, allowance, spent, delta, status: i > todayIndex ? 'future' : delta < 0 ? 'overspent' : 'safe', transactions: current.filter(t => t.cycleDayIndex === i) };
   });
   return { totalLivingBudget, plannedReserveTotal, spendableLivingPool, totalSpentCycle, remainingLivingBudget, todayAllowance, todaySpent, todayDelta, todayStatus: status, futureDaysCount, futureDailyAllowance, redistributionPerDay: futureDailyAllowance - baseDailyAllowance, pastSafeSurplusTotal: Math.max(0, pastDelta), days, baseDailyAllowance, rolloverMode: mode, pastSpent, walletLimit };
 }

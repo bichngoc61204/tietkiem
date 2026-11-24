@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ChefHat, Moon, RefreshCw, Sun, Utensils } from 'lucide-react';
+import { Check, Moon, RefreshCw, Sun, Utensils } from 'lucide-react';
 import { Account, Transaction } from '../types/finance';
 import { formatVND } from '../utils/format';
 
@@ -21,33 +21,46 @@ interface MealItem {
 }
 
 const ALL_MEALS: MealItem[] = [
-  // Bữa sáng
-  { id: 'b1', name: 'Bánh mì ốp la pate', price: 20000, type: 'breakfast', tag: 'Nhanh gọn' },
-  { id: 'b2', name: 'Xôi mặn chả lụa', price: 20000, type: 'breakfast', tag: 'No lâu' },
-  { id: 'b3', name: 'Phở bò tái lăn', price: 40000, type: 'breakfast', tag: 'Chất lượng' },
-  { id: 'b4', name: 'Bún bò Huế sáng', price: 35000, type: 'breakfast', tag: 'Đậm đà' },
-  { id: 'b5', name: 'Bánh cuốn nóng chả lụa', price: 25000, type: 'breakfast', tag: 'Thanh đạm' },
-  { id: 'b6', name: 'Bánh bao nhân thịt trứng cút', price: 18000, type: 'breakfast', tag: 'Tiết kiệm' },
-  { id: 'b7', name: 'Mì tôm 2 trứng rau cải', price: 15000, type: 'breakfast', tag: 'Tự nấu' },
+  // Bữa sáng (0đ -> 40k)
+  { id: 'b0', name: '2 ly nước lọc + hít không khí sạch', price: 0, type: 'breakfast', tag: 'Quang hợp' },
+  { id: 'b0a', name: 'Trà đá vỉa hè + ngắm người ta ăn phở', price: 3000, type: 'breakfast', tag: 'Tâm linh' },
+  { id: 'b0b', name: 'Cà phê tự pha + 2 cái bánh quy', price: 5000, type: 'breakfast', tag: 'Tỉnh táo' },
+  { id: 'b0c', name: 'Bánh mì không chấm sữa Ông Thọ', price: 8000, type: 'breakfast', tag: 'Tuổi thơ' },
+  { id: 'b0d', name: 'Xôi xéo hành phi gói lá chuối', price: 10000, type: 'breakfast', tag: 'Chắc dạ' },
+  { id: 'b0e', name: 'Bánh mì ngọt + nước lọc công ty', price: 12000, type: 'breakfast', tag: 'Tối giản' },
+  { id: 'b7', name: 'Mì gói úp 1 quả trứng gà', price: 15000, type: 'breakfast', tag: 'Quốc dân' },
+  { id: 'b7b', name: 'Bánh giò nóng + tương ớt', price: 15000, type: 'breakfast', tag: 'Ấm bụng' },
+  { id: 'b6', name: 'Xôi mặn chả lụa ruốc bông', price: 18000, type: 'breakfast', tag: 'No lâu' },
+  { id: 'b1', name: 'Bánh mì ốp la pate dưa leo', price: 20000, type: 'breakfast', tag: 'Nhanh gọn' },
+  { id: 'b5', name: 'Bánh cuốn nóng chả quế', price: 25000, type: 'breakfast', tag: 'Thanh đạm' },
+  { id: 'b4', name: 'Bún riêu cua đồng', price: 30000, type: 'breakfast', tag: 'Đậm đà' },
+  { id: 'b3', name: 'Phở bò tái chín', price: 40000, type: 'breakfast', tag: 'Chất lượng' },
 
-  // Bữa trưa
+  // Bữa trưa (0đ -> 65k)
+  { id: 'l0', name: 'Nhịn trưa uống nước lọc giữ dáng', price: 0, type: 'lunch', tag: 'Siết cân' },
+  { id: 'l0b', name: 'Bánh mì ngọt + ngủ trưa 1 giấc', price: 10000, type: 'lunch', tag: 'Tiết kiệm' },
+  { id: 'l0c', name: 'Cơm trắng + trứng chiên nước mắm', price: 12000, type: 'lunch', tag: 'Cơm nhà' },
+  { id: 'l0d', name: 'Bánh mì chả cá nóng giòn', price: 15000, type: 'lunch', tag: 'Chống đói' },
+  { id: 'l0e', name: 'Xôi gà xé mini', price: 18000, type: 'lunch', tag: 'Gọn lẹ' },
+  { id: 'l0f', name: 'Bánh mì thịt nướng đầy đủ', price: 20000, type: 'lunch', tag: 'Vừa ví' },
+  { id: 'l7', name: 'Cơm bình dân 1 mặn 1 canh', price: 25000, type: 'lunch', tag: 'Đủ chất' },
+  { id: 'l2', name: 'Cơm văn phòng 2 món tự chọn', price: 35000, type: 'lunch', tag: 'Cân bằng' },
   { id: 'l1', name: 'Cơm tấm sườn bì chả', price: 40000, type: 'lunch', tag: 'Quen thuộc' },
-  { id: 'l2', name: 'Cơm văn phòng 1 mặn 2 rau', price: 35000, type: 'lunch', tag: 'Cân bằng' },
   { id: 'l3', name: 'Bún chả Hà Nội', price: 45000, type: 'lunch', tag: 'Hấp dẫn' },
-  { id: 'l4', name: 'Bún đậu mắm tôm', price: 40000, type: 'lunch', tag: 'Khoái khẩu' },
-  { id: 'l5', name: 'Cơm gà xối mỡ', price: 42000, type: 'lunch', tag: 'No nê' },
-  { id: 'l6', name: 'Bún riêu cua ốc bò', price: 35000, type: 'lunch', tag: 'Dễ ăn' },
-  { id: 'l7', name: 'Cơm bình dân tự chọn', price: 30000, type: 'lunch', tag: 'Tiết kiệm' },
   { id: 'l8', name: 'Cơm Bento cá thu Nhật', price: 65000, type: 'lunch', tag: 'Cao cấp' },
 
-  // Bữa tối
-  { id: 'd1', name: 'Tự nấu: Thịt kho + canh cải', price: 35000, type: 'dinner', tag: 'Tự nấu' },
-  { id: 'd2', name: 'Hủ tiếu Nam Vang', price: 40000, type: 'dinner', tag: 'Ấm bụng' },
-  { id: 'd3', name: 'Bún bò tái nạm', price: 45000, type: 'dinner', tag: 'Ngon miệng' },
-  { id: 'd4', name: 'Mì cay hải sản', price: 50000, type: 'dinner', tag: 'Đổi vị' },
-  { id: 'd5', name: 'Cháo sườn quẩy', price: 30000, type: 'dinner', tag: 'Nhẹ bụng' },
-  { id: 'd6', name: 'Tự nấu: Canh sườn + đậu sốt', price: 40000, type: 'dinner', tag: 'Cơm nhà' },
-  { id: 'd7', name: 'Bò né bánh mì tiêu đen', price: 55000, type: 'dinner', tag: 'Thưởng thức' },
+  // Bữa tối (0đ -> 79k)
+  { id: 'd0', name: 'Đánh răng sớm rồi đi ngủ luôn', price: 0, type: 'dinner', tag: 'Kỷ luật' },
+  { id: 'd0b', name: 'Mì Hảo Hảo chua cay không topping', price: 5000, type: 'dinner', tag: 'Huyền thoại' },
+  { id: 'd0c', name: 'Cháo trắng hột vịt muối', price: 10000, type: 'dinner', tag: 'Nhẹ bụng' },
+  { id: 'd0d', name: 'Cơm nguội chiên trứng hành lá', price: 12000, type: 'dinner', tag: 'Tự nấu' },
+  { id: 'd0e', name: 'Mì gói 2 trứng + ít rau cải', price: 15000, type: 'dinner', tag: 'Tăng đạm' },
+  { id: 'd0f', name: 'Bánh canh cua lề đường', price: 20000, type: 'dinner', tag: 'Ấm bụng' },
+  { id: 'd5', name: 'Hủ tiếu gõ đầu hẻm', price: 25000, type: 'dinner', tag: 'Chân ái' },
+  { id: 'd5b', name: 'Cháo sườn quẩy nóng', price: 30000, type: 'dinner', tag: 'Nhẹ bụng' },
+  { id: 'd1', name: 'Tự nấu: Thịt kho + canh rau', price: 35000, type: 'dinner', tag: 'Cơm nhà' },
+  { id: 'd2', name: 'Hủ tiếu Nam Vang', price: 40000, type: 'dinner', tag: 'Thưởng thức' },
+  { id: 'd7', name: 'Bò né bánh mì tiêu đen', price: 55000, type: 'dinner', tag: 'Ngon miệng' },
   { id: 'd8', name: 'Lẩu 1 người kim chi bò', price: 79000, type: 'dinner', tag: 'Cuối tuần' },
 ];
 
@@ -87,29 +100,46 @@ export const MealAdvisor: React.FC<MealAdvisorProps> = ({
     }
   }, [spendingWallets, bestDefaultWalletId, selectedWalletId]);
 
-  const effectiveBudget = Math.max(todayAllowance, 45000);
-  const budgetBreakfast = Math.round(effectiveBudget * 0.22);
-  const budgetLunch = Math.round(effectiveBudget * 0.42);
-  const budgetDinner = Math.round(effectiveBudget * 0.36);
+  const effectiveBudget = Math.max(0, todayAllowance);
 
-  const filterByBudget = (type: MealSlot, target: number) => {
-    const list = ALL_MEALS.filter((m) => m.type === type);
-    const within = list.filter((m) => m.price <= target * 1.35);
-    return within.length > 0 ? within : list;
-  };
+  // Build valid 3-meal combos whose TOTAL cost <= effectiveBudget
+  const validCombos = useMemo(() => {
+    const breakfasts = ALL_MEALS.filter((m) => m.type === 'breakfast' && m.price <= effectiveBudget);
+    const lunches = ALL_MEALS.filter((m) => m.type === 'lunch' && m.price <= effectiveBudget);
+    const dinners = ALL_MEALS.filter((m) => m.type === 'dinner' && m.price <= effectiveBudget);
 
-  const breakfastOptions = useMemo(() => filterByBudget('breakfast', budgetBreakfast), [budgetBreakfast]);
-  const lunchOptions = useMemo(() => filterByBudget('lunch', budgetLunch), [budgetLunch]);
-  const dinnerOptions = useMemo(() => filterByBudget('dinner', budgetDinner), [budgetDinner]);
+    const combos: { b: MealItem; l: MealItem; d: MealItem; total: number }[] = [];
+    for (const b of breakfasts) {
+      for (const l of lunches) {
+        if (b.price + l.price > effectiveBudget) continue;
+        for (const d of dinners) {
+          const total = b.price + l.price + d.price;
+          if (total <= effectiveBudget) {
+            combos.push({ b, l, d, total });
+          }
+        }
+      }
+    }
+
+    if (combos.length === 0) {
+      return [{ b: ALL_MEALS[0], l: ALL_MEALS[13], d: ALL_MEALS[24], total: 0 }];
+    }
+
+    const sweetSpot = combos.filter((c) => c.total >= effectiveBudget * 0.55);
+    const pool = sweetSpot.length > 0 ? sweetSpot : combos;
+    return pool.sort((a, b) => b.total - a.total);
+  }, [effectiveBudget]);
+
+  const chosenCombo = validCombos[randomSeed % validCombos.length];
 
   const loggedTodayNames = useMemo(
     () => new Set(todayTransactions.map((t) => t.merchant.trim().toLowerCase())),
     [todayTransactions]
   );
 
-  const getSlotDisplay = (slot: MealSlot, options: MealItem[], offset: number) => {
+  const getSlotDisplay = (slot: MealSlot, candidate: MealItem) => {
     const remembered = eatenSlots[slot];
-    if (remembered && loggedTodayNames.has(remembered.name.toLowerCase())) {
+    if (remembered && (remembered.price === 0 || loggedTodayNames.has(remembered.name.toLowerCase()))) {
       return { meal: remembered, isEaten: true };
     }
     const matchedFromHistory = ALL_MEALS.find(
@@ -118,13 +148,12 @@ export const MealAdvisor: React.FC<MealAdvisorProps> = ({
     if (matchedFromHistory) {
       return { meal: matchedFromHistory, isEaten: true };
     }
-    const candidate = options[(randomSeed + offset) % options.length];
     return { meal: candidate, isEaten: false };
   };
 
-  const breakfast = getSlotDisplay('breakfast', breakfastOptions, 0);
-  const lunch = getSlotDisplay('lunch', lunchOptions, 1);
-  const dinner = getSlotDisplay('dinner', dinnerOptions, 2);
+  const breakfast = getSlotDisplay('breakfast', chosenCombo.b);
+  const lunch = getSlotDisplay('lunch', chosenCombo.l);
+  const dinner = getSlotDisplay('dinner', chosenCombo.d);
 
   const slots = [
     {
@@ -132,7 +161,6 @@ export const MealAdvisor: React.FC<MealAdvisorProps> = ({
       title: 'Bữa sáng',
       icon: Sun,
       accent: 'text-[var(--tone-caution)]',
-      target: budgetBreakfast,
       ...breakfast,
     },
     {
@@ -140,7 +168,6 @@ export const MealAdvisor: React.FC<MealAdvisorProps> = ({
       title: 'Bữa trưa',
       icon: Utensils,
       accent: 'text-[var(--brand)]',
-      target: budgetLunch,
       ...lunch,
     },
     {
@@ -148,7 +175,6 @@ export const MealAdvisor: React.FC<MealAdvisorProps> = ({
       title: 'Bữa tối',
       icon: Moon,
       accent: 'text-[var(--ink-primary)]',
-      target: budgetDinner,
       ...dinner,
     },
   ];
@@ -156,28 +182,34 @@ export const MealAdvisor: React.FC<MealAdvisorProps> = ({
   const totalMealCost =
     (breakfast.meal?.price || 0) + (lunch.meal?.price || 0) + (dinner.meal?.price || 0);
 
+  const funBanner =
+    effectiveBudget <= 0
+      ? 'Hôm nay 0 đ: Uống nước lọc, hít khí trời, mai làm lại từ đầu!'
+      : effectiveBudget <= 25000
+      ? `Chế độ sinh tồn ${formatVND(effectiveBudget)}: Bóp nát chi tiêu, giữ vững ví tiền!`
+      : effectiveBudget <= 50000
+      ? `Thực đơn thắt lưng buộc bụng trong ${formatVND(effectiveBudget)} — vẫn no, vẫn vui.`
+      : `Hạn mức ${formatVND(effectiveBudget)} — ăn ngon mà vẫn dư tiền cuối ngày.`;
+
   const handleChooseMeal = (slot: MealSlot, meal: MealItem, isEaten: boolean) => {
     if (isEaten || !meal) return;
     setEatenSlots((prev) => ({ ...prev, [slot]: meal }));
-    onSelectMeal(meal.name, meal.price, selectedWalletId || bestDefaultWalletId);
+    if (meal.price > 0) {
+      onSelectMeal(meal.name, meal.price, selectedWalletId || bestDefaultWalletId);
+    }
   };
 
   return (
     <section className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 space-y-3.5 animate-page-enter">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-[var(--brand-light)] border border-[var(--color-bbf7d0)] text-[var(--brand)] flex items-center justify-center shrink-0">
-            <ChefHat className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-[var(--ink-primary)] truncate">
-              Gợi ý ăn uống hôm nay
-            </h2>
-            <p className="text-xs text-[var(--ink-muted)] tabular-nums truncate">
-              Theo hạn mức:{' '}
-              <span className="font-semibold text-[var(--brand)]">{formatVND(effectiveBudget)}</span>
-            </p>
-          </div>
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-[var(--ink-primary)] whitespace-nowrap">
+            Thực đơn hôm nay
+          </h2>
+          <p className="text-xs text-[var(--ink-muted)] tabular-nums whitespace-nowrap">
+            Hạn mức:{' '}
+            <span className="font-semibold text-[var(--brand)]">{formatVND(effectiveBudget)}</span>
+          </p>
         </div>
 
         <button
@@ -186,12 +218,20 @@ export const MealAdvisor: React.FC<MealAdvisorProps> = ({
           className="tap-scale shrink-0 flex items-center gap-1 px-3 h-8 rounded-xl bg-[var(--bg-canvas)] hover:bg-[var(--border-hairline)] text-[var(--ink-primary)] text-xs font-semibold cursor-pointer whitespace-nowrap"
         >
           <RefreshCw className="w-3.5 h-3.5" />
-          <span>Đổi món</span>
+          <span>Đổi combo</span>
         </button>
       </div>
 
-      {/* Wallet Selector for Meal Payment */}
-      {spendingWallets.length > 0 && (
+      {/* Smooth Horizontal Marquee Slider */}
+      <div className="bg-[var(--bg-paper)] border border-[var(--border-hairline)] rounded-xl px-3 py-2 overflow-hidden">
+        <div className="animate-marquee text-xs text-[var(--ink-primary)] whitespace-nowrap">
+          <span className="pr-12">{funBanner}</span>
+          <span className="pr-12" aria-hidden="true">{funBanner}</span>
+        </div>
+      </div>
+
+      {/* Wallet Selector for Meal Payment (only shown if multiple spending wallets exist) */}
+      {spendingWallets.length > 1 && (
         <div className="flex items-center gap-2.5">
           <label htmlFor="meal-wallet-select" className="text-xs font-semibold text-[var(--ink-muted)] shrink-0">Trừ từ ví:</label>
           <select
@@ -235,14 +275,14 @@ export const MealAdvisor: React.FC<MealAdvisorProps> = ({
                 {meal?.name}
               </p>
               <p className="text-xs font-semibold text-[var(--brand)] tabular-nums">
-                {formatVND(meal?.price || 0)}
+                {meal?.price === 0 ? '0 đ (Miễn phí)' : formatVND(meal?.price || 0)}
               </p>
             </div>
 
             {isEaten ? (
               <div className="animate-pop h-9 rounded-lg bg-[var(--tone-white)] border border-[var(--color-bbf7d0)] text-[var(--brand)] text-xs font-semibold flex items-center justify-center gap-1 whitespace-nowrap">
                 <Check className="w-3.5 h-3.5" strokeWidth={2.2} />
-                <span>Đã ăn hôm nay</span>
+                <span>Đã chốt hôm nay</span>
               </div>
             ) : (
               <button
@@ -250,7 +290,7 @@ export const MealAdvisor: React.FC<MealAdvisorProps> = ({
                 onClick={() => meal && handleChooseMeal(slot, meal, isEaten)}
                 className="tap-scale w-full h-9 px-2.5 rounded-lg bg-[var(--tone-white)] hover:bg-[var(--brand-light)] border border-[var(--border-hairline)] hover:border-[var(--brand)] text-xs font-semibold text-[var(--brand)] cursor-pointer whitespace-nowrap"
               >
-                + Ghi ăn món này
+                {meal?.price === 0 ? '+ Chốt kèo nhịn (0 đ)' : '+ Ghi ăn món này'}
               </button>
             )}
           </div>
@@ -265,7 +305,7 @@ export const MealAdvisor: React.FC<MealAdvisorProps> = ({
         </span>
         {totalMealCost <= effectiveBudget ? (
           <span className="text-xs font-semibold text-[var(--brand)] bg-[var(--brand-light)] px-2.5 py-0.5 rounded-full border border-[var(--color-bbf7d0)] whitespace-nowrap">
-            Trong ngân sách ngày
+            Còn dư {formatVND(effectiveBudget - totalMealCost)}
           </span>
         ) : (
           <span className="text-xs font-semibold text-[var(--tone-danger)] bg-[var(--tone-danger-soft)] px-2.5 py-0.5 rounded-full border border-[var(--tone-danger-border)] whitespace-nowrap">

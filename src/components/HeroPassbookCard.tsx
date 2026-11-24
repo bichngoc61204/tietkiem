@@ -1,5 +1,5 @@
 import React from 'react';
-import { QrCode, Plus, CalendarClock, ArrowDownCircle, Wallet } from 'lucide-react';
+import { QrCode, Plus, ArrowDownCircle, Wallet } from 'lucide-react';
 import { Account, CycleBudgetMetrics, SalaryConfig } from '../types/finance';
 import { formatVND } from '../utils/format';
 interface HeroPassbookCardProps {
@@ -8,12 +8,13 @@ interface HeroPassbookCardProps {
   accounts: Account[];
   onOpenQr: () => void;
   onOpenQuickExpense: () => void;
-  onOpenPlannedExpense: () => void;
+  onOpenPlannedExpense?: () => void;
   onOpenDeposit: () => void;
 }
-export const HeroPassbookCard: React.FC<HeroPassbookCardProps> = ({ metrics, accounts, onOpenQr, onOpenQuickExpense, onOpenPlannedExpense, onOpenDeposit }) => {
+export const HeroPassbookCard: React.FC<HeroPassbookCardProps> = ({ metrics, accounts, onOpenQr, onOpenQuickExpense, onOpenDeposit }) => {
   const ratio = Math.min(1, metrics.todaySpent / Math.max(1, metrics.todayAllowance));
-  const spending = accounts.filter(a => a.type !== 'savings');
+  const totalSpending = accounts.filter(a => a.type !== 'savings').reduce((s, a) => s + a.balance, 0);
+  const totalSavings = accounts.filter(a => a.type === 'savings').reduce((s, a) => s + a.balance, 0);
   return <section className="overview">
     <div className="daily-budget">
       <div className="budget-label"><h1 id="daily-label">Hôm nay còn có thể chi</h1><span className="budget-date">{new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</span></div>
@@ -25,14 +26,13 @@ export const HeroPassbookCard: React.FC<HeroPassbookCardProps> = ({ metrics, acc
     </div>
     <div className="quick-actions">
       <button type="button" onClick={onOpenQuickExpense}><Plus /><span>Ghi khoản chi</span></button>
-      <button type="button" onClick={onOpenDeposit}><ArrowDownCircle /><span>Thêm thu nhập</span></button>
-      <button type="button" onClick={onOpenPlannedExpense}><CalendarClock /><span>Khoản sắp chi</span></button>
+      <button type="button" onClick={onOpenDeposit}><ArrowDownCircle /><span>Nạp vào Ví An</span></button>
     </div>
     <div className="wallet-overview">
-      <div className="section-heading"><h2>Tiền trong ví</h2><Wallet size={18} /></div>
-      {spending.map(a => <div key={a.id} className="wallet-row"><span>{a.name}</span><strong>{formatVND(a.balance)}</strong></div>)}
-      <div className="wallet-total"><span>Tổng ví chi tiêu</span><strong>{formatVND(spending.reduce((s, a) => s + a.balance, 0))}</strong></div>
-      <p className="helper-text">Số dư bạn ghi nhận trong sổ, chưa đồng bộ với ngân hàng</p>
+      <div className="section-heading"><h2>Số dư Ví An</h2><Wallet size={18} /></div>
+      <div className="wallet-row"><span>Ví An (chi tiêu)</span><strong>{formatVND(totalSpending)}</strong></div>
+      <div className="wallet-total"><span>Tiết kiệm đã giữ</span><strong>{formatVND(totalSavings)}</strong></div>
+      <p className="helper-text">Ngân sách nạp vào Ví An để chi tiêu & tiết kiệm theo chu kỳ lương</p>
     </div>
   </section>;
 };

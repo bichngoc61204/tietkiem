@@ -54,6 +54,7 @@ export interface SalaryConfig {
   savingsTarget: number;
   totalCycleDays: number;
   todayIndex: number;
+  cycleStartDayIndex?: number;
 }
 
 export interface FinanceTestBackup {
@@ -79,6 +80,7 @@ export interface UserProfile {
   salaryConfig: SalaryConfig;
   rolloverMode: RolloverMode;
   avoidedImpulseTotal: number;
+  lastPaydayConfirmedCycleKey?: string;
   createdAt: string;
 }
 
@@ -99,7 +101,7 @@ export interface CalendarDaySummary {
   shortDay: string;
   weekdayIndex: number;
   weekdayLabel: string;
-  phase: 'past' | 'today' | 'future';
+  phase: 'past' | 'today' | 'future' | 'untracked';
   allowance: number;
   spent: number;
   delta: number;
@@ -161,10 +163,26 @@ export interface SharedExpense {
   id: string;
   title: string;
   amount: number;
-  paidBy: 'ngoc' | 'minh';
-  splitMode: '50/50' | '60/40' | '100%';
-  ngocShareRatio: number;
+  paidByUid: string;         // uid of the member who paid
+  splitRatios: Record<string, number>; // uid -> ratio (0..1), must sum to 1
   date: string;
+}
+
+export interface GroupMember {
+  uid: string;
+  displayName: string;
+  email: string;
+  joinedAt: string;
+}
+
+export interface GroupInvitation {
+  id: string;
+  groupId: string;
+  fromUid: string;
+  fromName: string;
+  toEmail: string;
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: string;
 }
 
 export interface SharedGroup {
@@ -173,6 +191,7 @@ export interface SharedGroup {
   typeLabel: string;
   ownerUid: string;
   memberUids: string[];
+  members: GroupMember[];          // full member profiles
   monthlyBudget: number;
   sharedGoal: {
     title: string;

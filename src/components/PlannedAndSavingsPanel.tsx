@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CalendarClock, CheckCircle2, Plus } from 'lucide-react';
+import { CheckCircle2, Plus } from 'lucide-react';
 import { CATEGORIES } from '../data/mockData';
 import {
   Account,
@@ -42,6 +42,12 @@ export const PlannedAndSavingsPanel: React.FC<PlannedAndSavingsPanelProps> = ({
 
   const activePlanned = plannedExpenses.filter((p) => !p.completed);
 
+  const formatDateValue = (iso: string) => {
+    if (!iso) return 'Cuối kỳ';
+    const [y, m, d] = iso.split('-');
+    return y && m && d ? `${d}/${m}/${y}` : iso;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numericAmt = parseNumberWithDots(amount);
@@ -52,12 +58,13 @@ export const PlannedAndSavingsPanel: React.FC<PlannedAndSavingsPanelProps> = ({
       title: title.trim(),
       amount: numericAmt,
       category,
-      dueDateLabel: dueDateLabel.trim() || 'Cuối kỳ',
+      dueDateLabel: formatDateValue(dueDateLabel.trim()),
     });
     setSaving(false);
     if (!ok) return;
     setTitle('');
     setAmount('');
+    setDueDateLabel('');
     setIsAddOpen(false);
   };
 
@@ -66,16 +73,13 @@ export const PlannedAndSavingsPanel: React.FC<PlannedAndSavingsPanelProps> = ({
       {/* UPCOMING PLANNED EXPENSES RADAR */}
       <section className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <CalendarClock className="w-4 h-4 text-[var(--tone-caution)] shrink-0" strokeWidth={1.75} />
-            <div>
-              <h3 className="text-sm font-semibold text-[var(--ink-primary)]">
-                Chi tiêu dự kiến sắp tới
-              </h3>
-              <p className="text-xs text-[var(--ink-muted)] tabular-nums">
-                Đã dành {formatVND(metrics.plannedReserveTotal)} khỏi ngân sách có thể chi.
-              </p>
-            </div>
+          <div>
+            <h3 className="text-sm font-semibold text-[var(--ink-primary)]">
+              Chi tiêu dự kiến sắp tới
+            </h3>
+            <p className="text-xs text-[var(--ink-muted)] tabular-nums">
+              Đã dành {formatVND(metrics.plannedReserveTotal)} khỏi ngân sách có thể chi.
+            </p>
           </div>
           <button
             type="button"
@@ -99,19 +103,20 @@ export const PlannedAndSavingsPanel: React.FC<PlannedAndSavingsPanelProps> = ({
               placeholder="VD: Sinh nhật bạn, Thay nhớt xe..."
               className="app-input bg-[var(--tone-white)]!"
             />
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <input
                 type="text"
+                inputMode="numeric"
                 value={amount}
                 onChange={(e) => setAmount(formatNumberWithDots(e.target.value))}
                 placeholder="Số tiền (đ)"
                 className="app-input bg-[var(--tone-white)]! font-semibold tabular-nums"
               />
               <input
-                type="text"
+                type="date"
+                aria-label="Chọn ngày dự kiến"
                 value={dueDateLabel}
                 onChange={(e) => setDueDateLabel(e.target.value)}
-                placeholder="Ngày (28/11)"
                 className="app-input bg-[var(--tone-white)]! tabular-nums"
               />
             </div>

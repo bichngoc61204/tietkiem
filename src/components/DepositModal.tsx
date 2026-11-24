@@ -41,11 +41,13 @@ export const DepositModal: React.FC<DepositModalProps> = ({
     onClose();
   };
 
+  const spendingWallets = accounts.filter(a => a.type !== 'savings');
+
   return (
-    <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Thêm thu nhập" tabIndex={-1} className="fixed inset-0 z-50 bg-[var(--ink-primary)]/50 backdrop-blur-[2px] flex items-end sm:items-center justify-center sm:p-4 animate-backdrop">
+    <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Nạp tiền vào Ví An" tabIndex={-1} className="fixed inset-0 z-50 bg-[var(--ink-primary)]/50 backdrop-blur-[2px] flex items-end sm:items-center justify-center sm:p-4 animate-backdrop">
       <div className="w-full max-w-sm bg-[var(--bg-canvas)] border border-[var(--border-hairline)] rounded-t-2xl sm:rounded-2xl p-5 space-y-4 animate-sheet-up max-h-[92dvh] overflow-y-auto">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-[var(--ink-primary)]">Thêm thu nhập</h2>
+          <h2 className="text-sm font-semibold text-[var(--ink-primary)]">Nạp tiền vào Ví An</h2>
           <button
             type="button"
             onClick={onClose}
@@ -57,24 +59,26 @@ export const DepositModal: React.FC<DepositModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-[var(--ink-muted)] mb-1" htmlFor="depositmodal-1">Chọn ví</label>
-            <select id="depositmodal-1"
-              value={selectedAccount}
-              onChange={(e) => setSelectedAccount(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl bg-[var(--tone-white)] border border-[var(--border-hairline)] text-xs font-semibold text-[var(--ink-primary)]"
-            >
-              {accounts.filter(a => a.type !== 'savings').map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} / Hiện có {formatVND(a.balance)}
-                </option>
-              ))}
-            </select>
-          </div>
+          {spendingWallets.length > 1 && (
+            <div>
+              <label className="block text-xs font-medium text-[var(--ink-muted)] mb-1" htmlFor="depositmodal-1">Chọn ví</label>
+              <select id="depositmodal-1"
+                value={selectedAccount}
+                onChange={(e) => setSelectedAccount(e.target.value)}
+                className="app-input font-semibold"
+              >
+                {spendingWallets.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} · Hiện có {formatVND(a.balance)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-[var(--ink-muted)] mb-1">
-              Tiền thực nhận (VND)
+              Số tiền nạp vào Ví An (VND)
             </label>
             <div className="relative flex items-center">
               <input

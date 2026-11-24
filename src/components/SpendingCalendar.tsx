@@ -35,22 +35,13 @@ export const SpendingCalendar: React.FC<SpendingCalendarProps> = ({
     <div className="space-y-4 w-full min-w-0">
       {/* Main Calendar Card */}
       <section className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-3.5 sm:p-4 space-y-3.5 w-full min-w-0 overflow-hidden">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <h2 className="text-[14px] font-semibold text-[var(--ink-primary)]">
-              Lịch chi tiêu trong kỳ
-            </h2>
-            <p className="text-xs text-[var(--ink-muted)] mt-0.5 tabular-nums">
-              Hạn mức hôm nay: <span className="font-semibold text-[var(--brand)]">{formatVND(metrics.todayAllowance)}/ngày</span>
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSelectedDayIndex(todayIndex)}
-            className="text-xs font-semibold text-[var(--ink-primary)] bg-[var(--bg-paper)] border border-[var(--border-hairline)] hover:border-[var(--ink-primary)] px-2.5 py-1 rounded-lg transition cursor-pointer shrink-0"
-          >
-            Về hôm nay
-          </button>
+        <div>
+          <h2 className="text-[14px] font-semibold text-[var(--ink-primary)]">
+            Lịch chi tiêu trong kỳ
+          </h2>
+          <p className="text-xs text-[var(--ink-muted)] mt-0.5 tabular-nums">
+            Hạn mức hôm nay: <span className="font-semibold text-[var(--brand)]">{formatVND(metrics.todayAllowance)}/ngày</span>
+          </p>
         </div>
 
         {/* Simple Beginner-Friendly Legend */}
@@ -88,6 +79,7 @@ export const SpendingCalendar: React.FC<SpendingCalendarProps> = ({
             const isToday = day.phase === 'today';
             const isPast = day.phase === 'past';
             const isFuture = day.phase === 'future';
+            const isUntracked = day.phase === 'untracked';
             const hasLogged = day.transactions.length > 0;
             const isTodayOverspent = isToday && day.status === 'overspent';
 
@@ -95,12 +87,12 @@ export const SpendingCalendar: React.FC<SpendingCalendarProps> = ({
             let cellStyle = 'bg-[var(--bg-paper)] border-[var(--border-hairline)] text-[var(--ink-muted)]';
             let amountColor = 'text-[var(--ink-muted)]';
 
-            if (isPast) {
-              if (!hasLogged) {
-                // Past days before user joined
-                cellStyle = 'bg-[var(--bg-paper)] border-[var(--border-hairline)] text-[var(--color-9ca3af)] opacity-80';
-                amountColor = 'text-[var(--color-9ca3af)]';
-              } else if (day.delta >= 0) {
+            if (isUntracked) {
+              // Days before user started using app — neutral gray
+              cellStyle = 'bg-[var(--bg-paper)] border-[var(--border-hairline)] text-[var(--color-9ca3af)] opacity-70';
+              amountColor = 'text-[var(--color-9ca3af)]';
+            } else if (isPast) {
+              if (day.delta >= 0) {
                 cellStyle = 'bg-[var(--brand-light)] border-[var(--color-bbf7d0)] text-[var(--brand)]';
                 amountColor = 'text-[var(--brand)]';
               } else {
@@ -161,7 +153,7 @@ export const SpendingCalendar: React.FC<SpendingCalendarProps> = ({
                 >
                   {isFuture
                     ? formatCompactVND(day.allowance)
-                    : isPast && !hasLogged
+                    : (isPast || isUntracked) && !hasLogged
                     ? '-'
                     : formatCompactVND(day.delta, true)}
                 </span>
@@ -201,14 +193,12 @@ export const SpendingCalendar: React.FC<SpendingCalendarProps> = ({
               </p>
             ) : (
               <p>
-                Hạn mức hôm nay: <span className="font-semibold">{formatVND(metrics.todayAllowance)}</span>.
-                {metrics.todaySpent > 0 ? (
+                Hạn mức hôm nay: <span className="font-semibold">{formatVND(metrics.todayAllowance)}</span>
+                {metrics.todaySpent > 0 && (
                   <>
-                    {' '}Đã tiêu {formatVND(metrics.todaySpent)}, còn lại{' '}
-                    <span className="font-semibold">{formatVND(metrics.todayDelta)}</span>.
+                    {' '}· Đã tiêu {formatVND(metrics.todaySpent)}, còn{' '}
+                    <span className="font-semibold">{formatVND(metrics.todayDelta)}</span>
                   </>
-                ) : (
-                  ' Chưa có khoản chi nào ghi nhận hôm nay.'
                 )}
               </p>
             )}
@@ -329,8 +319,8 @@ export const SpendingCalendar: React.FC<SpendingCalendarProps> = ({
             <Plus className="w-3.5 h-3.5" strokeWidth={1.5} />
             <span>
               {selectedDay.phase === 'today'
-                ? 'Thêm khoản chi hôm nay (xem lịch tự chia lại)'
-                : `Bổ sung khoản chi bị quên vào ${selectedDay.dateLabel}`}
+                ? 'Thêm khoản chi hôm nay'
+                : `Bổ sung chi tiêu ngày ${selectedDay.dateLabel}`}
             </span>
           </button>
         )}

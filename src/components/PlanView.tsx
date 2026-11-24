@@ -23,12 +23,12 @@ interface PlanViewProps {
   transactions: Transaction[];
   plannedExpenses: PlannedExpense[];
   accounts: Account[];
-  rolloverMode: RolloverMode;
+  rolloverMode?: RolloverMode;
   goals: SavingsGoal[];
   pausedItems: PausedItem[];
   avoidedImpulseTotal: number;
   initialSubTab?: 'calendar' | 'planned' | 'decide';
-  onChangeRolloverMode: (mode: RolloverMode) => void;
+  onChangeRolloverMode?: (mode: RolloverMode) => void;
   onAddExpenseOnDay: (dayIndex: number) => void;
   onDeleteTransaction: (txId: string) => void;
   onAddPlanned: (payload: {
@@ -52,10 +52,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
   transactions,
   plannedExpenses,
   accounts,
-  rolloverMode,
   goals,
   initialSubTab = 'calendar',
-  onChangeRolloverMode,
   onAddExpenseOnDay,
   onDeleteTransaction,
   onAddPlanned,
@@ -109,29 +107,52 @@ export const PlanView: React.FC<PlanViewProps> = ({
     [transactions, salaryConfig.todayIndex]
   );
 
+  const insights = useMemo(() => {
+    const cycleTxs = transactionsInCycle(transactions, salaryConfig.paydayDay);
+    const totalIncomeExtra = cycleTxs
+      .filter((tx) => tx.type === 'income' && tx.status === 'confirmed')
+      .reduce((s, t) => s + t.amount, 0);
+    const cycleStartDay = Math.min(salaryConfig.todayIndex, Math.max(0, salaryConfig.cycleStartDayIndex || 0));
+    const activeDaysElapsed = Math.max(1, salaryConfig.todayIndex - cycleStartDay + 1);
+    const remainingDays = Math.max(1, salaryConfig.totalCycleDays - salaryConfig.todayIndex);
+    const avgDailySpend = Math.round(metrics.totalSpentCycle / activeDaysElapsed);
+    const projectedEndBalance = Math.round(
+      metrics.remainingLivingBudget - avgDailySpend * Math.max(0, remainingDays - 1)
+    );
+    let streak = 0;
+    for (let i = salaryConfig.todayIndex; i >= cycleStartDay; i--) {
+      const d = metrics.days[i];
+      if (!d || d.status === 'overspent') break;
+      if (d.phase === 'today' || d.phase === 'past') streak++;
+    }
+    const topCat = [...categoryTotals].sort((a, b) => b.spent - a.spent)[0];
+    return { totalIncomeExtra, avgDailySpend, projectedEndBalance, streak, topCat };
+  }, [transactions, salaryConfig, metrics, categoryTotals]);
+
   return (
     <div className="space-y-4">
-      {/* Sub-Navigation Pills (Always 1 single line, never wraps) */}
-      <div className="grid grid-cols-3 gap-1 bg-[var(--tone-white)] border border-[var(--border-hairline)] p-1 rounded-2xl">
-        {[
-          { id: 'calendar', label: 'Lịch' },
-          { id: 'planned', label: 'Tiết kiệm' },
-          { id: 'decide', label: 'Phân tích' },
-        ].map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setSubTab(item.id as 'calendar' | 'planned' | 'decide')}
-            className={`tap-scale h-9 px-2 rounded-xl text-xs font-semibold transition-[color,background-color,border-color,opacity,transform] duration-200 cursor-pointer whitespace-nowrap flex items-center justify-center ${
-              subTab === item.id
-                ? 'bg-[var(--brand)] text-[var(--tone-white)] shadow-xs'
-                : 'text-[var(--ink-muted)] hover:text-[var(--ink-primary)]'
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      {/* Sub-Navigation Pills: only Lịch & Phân tích (Tiết kiệm has its own main tab) */}
+      {initialSubTab !== 'planned' && (
+        <div className="grid grid-cols-2 gap-1 bg-[var(--tone-white)] border border-[var(--border-hairline)] p-1 rounded-2xl">
+          {[
+            { id: 'calendar', label: 'Lịch' },
+            { id: 'decide', label: 'Phân tích' },
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSubTab(item.id as 'calendar' | 'decide')}
+              className={`tap-scale h-9 px-2 rounded-xl text-xs font-semibold transition-[color,background-color,border-color,opacity,transform] duration-200 cursor-pointer whitespace-nowrap flex items-center justify-center ${
+                subTab === item.id
+                  ? 'bg-[var(--brand)] text-[var(--tone-white)] shadow-xs'
+                  : 'text-[var(--ink-muted)] hover:text-[var(--ink-primary)]'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* SUB-TAB 1: CALENDAR */}
       {subTab === 'calendar' && (
@@ -142,60 +163,6 @@ export const PlanView: React.FC<PlanViewProps> = ({
             onAddExpenseOnDay={onAddExpenseOnDay}
             onDeleteTransaction={onDeleteTransaction}
           />
-
-          <section className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 space-y-2.5">
-            <div>
-              <h3 className="text-sm font-semibold text-[var(--ink-primary)]">
-                Chế độ tự chia tiền các ngày còn lại
-              </h3>
-              <p className="text-xs text-[var(--ink-muted)] mt-0.5">
-                Chọn cách hệ thống phản ứng khi hôm nay bạn tiêu dư hoặc tiêu lố.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {[
-                {
-                  id: 'redistribute' as RolloverMode,
-                  title: 'Tự chia đều (Khuyên dùng)',
-                  desc: 'Dư cộng thêm cho ngày sau; tiêu lố trừ nhẹ đều các ngày còn lại.',
-                },
-                {
-                  id: 'strict' as RolloverMode,
-                  title: 'Giữ mức chi tối đa',
-                  desc: 'Tiền dư được giữ lại; chi vượt sẽ giảm hạn mức khi ngân sách không đủ.',
-                },
-              ].map((mode) => {
-                const selected = rolloverMode === mode.id;
-                return (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    onClick={() => onChangeRolloverMode(mode.id)}
-                    className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
-                      selected
-                        ? 'bg-[var(--bg-paper)] border-[var(--ink-primary)]'
-                        : 'bg-[var(--tone-white)] border-[var(--border-hairline)] hover:border-[var(--ink-muted)]'
-                    }`}
-                  >
-                    <span
-                      className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                        selected ? 'border-[var(--ink-primary)]' : 'border-[var(--ink-muted)]'
-                      }`}
-                    >
-                      {selected && <span className="w-2 h-2 rounded-full bg-[var(--ink-primary)]" />}
-                    </span>
-                    <div>
-                      <p className="text-xs font-semibold text-[var(--ink-primary)]">{mode.title}</p>
-                      <p className="text-xs text-[var(--ink-muted)] mt-0.5 leading-relaxed">
-                        {mode.desc}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
         </div>
       )}
 
@@ -345,9 +312,56 @@ export const PlanView: React.FC<PlanViewProps> = ({
         </div>
       )}
 
-      {/* SUB-TAB 3: GỢI Ý MÓN ĂN & PHÂN BỔ DANH MỤC */}
+      {/* SUB-TAB 3: PHÂN TÍCH DÒNG TIỀN, THỰC ĐƠN & DANH MỤC */}
       {subTab === 'decide' && (
         <div key="tab-decide" className="space-y-4 animate-page-enter">
+          {/* Tổng quan dòng tiền & Dự báo chu kỳ */}
+          <section className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-[var(--ink-primary)] whitespace-nowrap">
+                Phân tích thu chi
+              </h2>
+              <span className="text-xs font-semibold text-[var(--brand)] bg-[var(--brand-light)] px-2.5 py-0.5 rounded-full border border-[var(--color-bbf7d0)] tabular-nums whitespace-nowrap shrink-0">
+                {insights.streak} ngày xanh
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="rounded-xl bg-[var(--bg-paper)] border border-[var(--border-hairline)] p-3">
+                <p className="text-xs text-[var(--ink-muted)]">Thu nhập / Nạp kỳ</p>
+                <p className="text-sm font-semibold text-[var(--brand)] tabular-nums mt-0.5">
+                  +{formatVND(Math.max(salaryConfig.monthlyIncome, insights.totalIncomeExtra))}
+                </p>
+              </div>
+              <div className="rounded-xl bg-[var(--bg-paper)] border border-[var(--border-hairline)] p-3">
+                <p className="text-xs text-[var(--ink-muted)]">Đã chi trong kỳ</p>
+                <p className="text-sm font-semibold text-[var(--ink-primary)] tabular-nums mt-0.5">
+                  -{formatVND(metrics.totalSpentCycle)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-[var(--bg-paper)] border border-[var(--border-hairline)] p-3">
+                <p className="text-xs text-[var(--ink-muted)]">Chi TB / ngày</p>
+                <p className="text-sm font-semibold text-[var(--ink-primary)] tabular-nums mt-0.5">
+                  {formatVND(insights.avgDailySpend)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-[var(--bg-paper)] border border-[var(--border-hairline)] p-3">
+                <p className="text-xs text-[var(--ink-muted)]">Dự báo cuối kỳ</p>
+                <p className={`text-sm font-semibold tabular-nums mt-0.5 ${insights.projectedEndBalance >= 0 ? 'text-[var(--brand)]' : 'text-[var(--tone-danger)]'}`}>
+                  {insights.projectedEndBalance >= 0
+                    ? `Dư ${formatVND(insights.projectedEndBalance)}`
+                    : `Thiếu ${formatVND(Math.abs(insights.projectedEndBalance))}`}
+                </p>
+              </div>
+            </div>
+
+            {insights.topCat && insights.topCat.spent > 0 && (
+              <p className="text-xs text-[var(--ink-muted)] bg-[var(--bg-paper)] rounded-xl px-3 py-2 leading-relaxed">
+                Nhóm chi nhiều nhất kỳ này là <strong className="text-[var(--ink-primary)]">{insights.topCat.label}</strong> ({formatVND(insights.topCat.spent)}).
+              </p>
+            )}
+          </section>
+
           {/* Gợi ý món ăn sáng / trưa / tối theo ngân sách */}
           <MealAdvisor
             todayAllowance={Math.max(0, metrics.todayDelta)}

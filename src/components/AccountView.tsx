@@ -1,6 +1,6 @@
-import { BANK_OPTIONS } from '../utils/vietqr';
 import { useModal } from '../hooks/useModal';
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeftRight,
   Check,
@@ -16,6 +16,7 @@ import {
   LicenseKey,
   PlanType,
   RecurringBill,
+  RolloverMode,
   SalaryConfig,
   UserProfile,
 } from '../types/finance';
@@ -24,10 +25,12 @@ import { formatNumberWithDots, formatVND, parseNumberWithDots } from '../utils/f
 interface AccountViewProps {
   profile: UserProfile;
   salaryConfig: SalaryConfig;
+  rolloverMode: RolloverMode;
   accounts: Account[];
   recurringBills: RecurringBill[];
   licenseKeys: LicenseKey[];
   onUpdateSalaryConfig: (next: SalaryConfig) => void;
+  onChangeRolloverMode: (mode: RolloverMode) => void;
   onToggleBillPaid: (billId: string) => void;
   onAddWallet: (wallet: Account) => Promise<boolean>;
   onInternalTransfer: (fromId: string, toId: string, amount: number) => Promise<boolean>;
@@ -41,21 +44,18 @@ interface AccountViewProps {
 export const AccountView: React.FC<AccountViewProps> = ({
   profile,
   salaryConfig,
+  rolloverMode,
   accounts,
   recurringBills,
   licenseKeys,
   onUpdateSalaryConfig,
+  onChangeRolloverMode,
   onToggleBillPaid,
   onInternalTransfer,
-  onAddWallet,
   onActivateLicense,
   onGenerateLicenseKey,
   onSignOut,
 }) => {
-  const [addingWallet, setAddingWallet] = useState(false);
-  const [walletKind, setWalletKind] = useState(BANK_OPTIONS[0].id);
-  const [openingBalance, setOpeningBalance] = useState('');
-  const [walletSaving, setWalletSaving] = useState(false);
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const modalRef = useModal(isTransferOpen, () => setIsTransferOpen(false));
   const [fromId, setFromId] = useState(accounts.find(a => a.type !== 'savings')?.id || '');
@@ -170,34 +170,20 @@ export const AccountView: React.FC<AccountViewProps> = ({
         )}
       </section>
 
-      {/* Multi-Account Wallets */}
+      {/* Ví An & Tiết kiệm */}
       <section className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-[var(--ink-primary)]">Ví của bạn</h2>
+          <h2 className="text-sm font-semibold text-[var(--ink-primary)]">Ví An & Tiết kiệm</h2>
           <button
             type="button"
             onClick={() => setIsTransferOpen(true)}
             className="text-xs font-semibold text-[var(--ink-primary)] flex items-center gap-1 underline underline-offset-2 cursor-pointer"
           >
             <ArrowLeftRight className="w-3.5 h-3.5" strokeWidth={1.5} />
-            <span>Chuyển nội bộ</span>
+            <span>Chuyển sang Tiết kiệm</span>
           </button>
         </div>
 
-        <button type="button" className="secondary-button" onClick={() => setAddingWallet(!addingWallet)}>Thêm ví</button>
-        {addingWallet && <form className="space-y-3" onSubmit={async e => {
-          e.preventDefault(); if (walletSaving) return;
-          setWalletSaving(true);
-          const bank = BANK_OPTIONS.find(b => b.id === walletKind);
-          const ok = await onAddWallet({ id: walletKind, name: bank?.name || 'Tiền mặt', balance: parseNumberWithDots(openingBalance), type: walletKind === 'cash' ? 'cash' : 'checking' });
-          setWalletSaving(false); if (ok) { setAddingWallet(false); setOpeningBalance(''); }
-        }}>
-          <label className="helper-text block" htmlFor="wallet-kind">Ngân hàng hoặc tiền mặt</label>
-          <select id="wallet-kind" className="app-input" value={walletKind} onChange={e => setWalletKind(e.target.value)}>{[...BANK_OPTIONS, { id: 'cash', name: 'Tiền mặt' }].map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
-          <label className="helper-text block" htmlFor="wallet-opening">Số dư hiện tại</label>
-          <input id="wallet-opening" className="app-input" inputMode="numeric" placeholder="0" value={openingBalance} onChange={e => setOpeningBalance(formatNumberWithDots(e.target.value))} />
-          <button className="secondary-button" disabled={walletSaving} type="submit">{walletSaving ? 'Đang lưu…' : 'Lưu ví'}</button>
-        </form>}
         <div className="divide-y divide-[var(--border-hairline)]">
           {accounts.map((acc) => (
             <div
@@ -218,9 +204,9 @@ export const AccountView: React.FC<AccountViewProps> = ({
       <section className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="text-sm font-semibold text-[var(--ink-primary)]">Ngân sách tháng</h2>
+            <h2 className="text-sm font-semibold text-[var(--ink-primary)]">Kế hoạch chu kỳ Ví An</h2>
             <p className="text-xs text-[var(--ink-muted)] mt-0.5">
-              Cập nhật thu nhập & khoản cố định để tự động chia lại lịch chi tiêu.
+              Cập nhật ngân sách nạp, ngày nhận lương & mục tiêu tiết kiệm để chia lại lịch chi tiêu.
             </p>
           </div>
           <button
@@ -232,18 +218,19 @@ export const AccountView: React.FC<AccountViewProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
           <div>
             <label className="block text-xs font-medium text-[var(--ink-muted)] mb-1" htmlFor="accountview-1">
-              Thu nhập tháng (VND)
+              Ngân sách nạp Ví An (VND)
             </label>
             <input id="accountview-1"
               type="text"
+              inputMode="numeric"
               value={formatNumberWithDots(localSalary.monthlyIncome)}
               onChange={(e) =>
                 setLocalSalary({ ...localSalary, monthlyIncome: parseNumberWithDots(e.target.value) })
               }
-              className="w-full px-3 py-2 rounded-xl bg-[var(--bg-paper)] border border-[var(--border-hairline)] text-xs font-semibold tabular-nums"
+              className="app-input font-semibold tabular-nums"
             />
           </div>
 
@@ -256,7 +243,7 @@ export const AccountView: React.FC<AccountViewProps> = ({
               onChange={(e) =>
                 setLocalSalary({ ...localSalary, paydayDay: Number(e.target.value) })
               }
-              className="w-full px-3 py-2 rounded-xl bg-[var(--bg-paper)] border border-[var(--border-hairline)] text-xs font-medium"
+              className="app-input font-medium"
             >
               {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
                 <option key={d} value={d}>
@@ -267,34 +254,93 @@ export const AccountView: React.FC<AccountViewProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
           <div>
             <label className="block text-xs font-medium text-[var(--ink-muted)] mb-1" htmlFor="accountview-3">
-              Tiền cố định (nhà, điện...)
+              Chi phí cố định dự trù
             </label>
             <input id="accountview-3"
               type="text"
+              inputMode="numeric"
+              placeholder="0"
               value={formatNumberWithDots(localSalary.fixedBills)}
               onChange={(e) =>
                 setLocalSalary({ ...localSalary, fixedBills: parseNumberWithDots(e.target.value) })
               }
-              className="w-full px-3 py-2 rounded-xl bg-[var(--bg-paper)] border border-[var(--border-hairline)] text-xs font-semibold tabular-nums"
+              className="app-input font-semibold tabular-nums"
             />
           </div>
 
           <div>
             <label className="block text-xs font-medium text-[var(--ink-muted)] mb-1" htmlFor="accountview-4">
-              Tiết kiệm mục tiêu tháng
+              Mục tiêu tiết kiệm
             </label>
             <input id="accountview-4"
               type="text"
+              inputMode="numeric"
+              placeholder="0"
               value={formatNumberWithDots(localSalary.savingsTarget)}
               onChange={(e) =>
                 setLocalSalary({ ...localSalary, savingsTarget: parseNumberWithDots(e.target.value) })
               }
-              className="w-full px-3 py-2 rounded-xl bg-[var(--bg-paper)] border border-[var(--border-hairline)] text-xs font-semibold tabular-nums"
+              className="app-input font-semibold tabular-nums"
             />
           </div>
+        </div>
+      </section>
+
+      {/* Chế độ tự chia tiền các ngày còn lại */}
+      <section className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 space-y-2.5">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--ink-primary)]">
+            Chế độ tự chia tiền các ngày còn lại
+          </h3>
+          <p className="text-xs text-[var(--ink-muted)] mt-0.5">
+            Chọn cách hệ thống phản ứng khi hôm nay bạn tiêu dư hoặc tiêu lố.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {[
+            {
+              id: 'redistribute' as RolloverMode,
+              title: 'Tự chia đều (Khuyên dùng)',
+              desc: 'Dư cộng thêm cho ngày sau; tiêu lố trừ nhẹ đều các ngày còn lại.',
+            },
+            {
+              id: 'strict' as RolloverMode,
+              title: 'Giữ mức chi tối đa',
+              desc: 'Tiền dư được giữ lại; chi vượt sẽ giảm hạn mức khi ngân sách không đủ.',
+            },
+          ].map((mode) => {
+            const selected = rolloverMode === mode.id;
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => onChangeRolloverMode(mode.id)}
+                className={`p-3 rounded-xl border text-left transition flex items-start gap-2.5 cursor-pointer ${
+                  selected
+                    ? 'bg-[var(--bg-paper)] border-[var(--ink-primary)]'
+                    : 'bg-[var(--tone-white)] border-[var(--border-hairline)] hover:border-[var(--ink-muted)]'
+                }`}
+              >
+                <span
+                  className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                    selected ? 'border-[var(--ink-primary)]' : 'border-[var(--ink-muted)]'
+                  }`}
+                >
+                  {selected && <span className="w-2 h-2 rounded-full bg-[var(--ink-primary)]" />}
+                </span>
+                <div>
+                  <p className="text-xs font-semibold text-[var(--ink-primary)]">{mode.title}</p>
+                  <p className="text-xs text-[var(--ink-muted)] mt-0.5 leading-relaxed">
+                    {mode.desc}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -418,25 +464,26 @@ export const AccountView: React.FC<AccountViewProps> = ({
       </details>)}
 
 
-      {/* Internal Transfer Modal */}
-      {isTransferOpen && (
-        <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Chuyển ví" tabIndex={-1} className="fixed inset-0 z-50 bg-[var(--brand-dark)]/50 flex items-end sm:items-center justify-center sm:p-4">
-          <div className="w-full max-w-md bg-[var(--bg-paper)] border border-[var(--border-hairline)] rounded-t-3xl sm:rounded-3xl p-5 space-y-4">
+      {/* Internal Transfer Modal rendered via Portal above bottom nav */}
+      {isTransferOpen && createPortal(
+        <div ref={modalRef} role="dialog" aria-modal="true" aria-label="Chuyển ví" tabIndex={-1} className="fixed inset-0 z-50 bg-[var(--ink-primary)]/50 backdrop-blur-[2px] flex items-end sm:items-center justify-center sm:p-4 animate-backdrop">
+          <div className="w-full max-w-md bg-[var(--bg-canvas)] border border-[var(--border-hairline)] rounded-t-2xl sm:rounded-2xl p-5 pb-8 sm:pb-6 space-y-4 animate-sheet-up max-h-[92dvh] overflow-y-auto">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-[var(--ink-primary)]">Chuyển tiền nội bộ</h2>
+              <h2 className="text-sm font-semibold text-[var(--ink-primary)]">Chuyển sang Tiết kiệm</h2>
               <button
                 type="button"
                 onClick={() => setIsTransferOpen(false)}
+                aria-label="Đóng"
                 className="p-1 text-[var(--ink-muted)] hover:text-[var(--ink-primary)] cursor-pointer"
               >
                 <X className="w-4 h-4" strokeWidth={1.5} />
               </button>
             </div>
-            <p className="text-xs text-[var(--ink-muted)]">
-              Ghi chuyển tiền giữa các ví trong sổ. Góp tiết kiệm vượt mục tiêu tháng sẽ giảm ngân sách có thể chi.
+            <p className="text-xs text-[var(--ink-muted)] leading-relaxed">
+              Ghi chuyển tiền giữa Ví An và Tiết kiệm. Góp tiết kiệm vượt mục tiêu sẽ giảm ngân sách có thể chi.
             </p>
             <form onSubmit={handleTransferSubmit} className="space-y-3">
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-[var(--ink-muted)] mb-1" htmlFor="accountview-5">
                     Từ tài khoản
@@ -444,7 +491,7 @@ export const AccountView: React.FC<AccountViewProps> = ({
                   <select id="accountview-5"
                     value={fromId}
                     onChange={(e) => setFromId(e.target.value)}
-                    className="w-full px-2.5 py-2 rounded-xl bg-[var(--tone-white)] border border-[var(--border-hairline)] text-xs font-medium"
+                    className="app-input font-medium"
                   >
                     {accounts.map((a) => (
                       <option key={a.id} value={a.id}>
@@ -460,7 +507,7 @@ export const AccountView: React.FC<AccountViewProps> = ({
                   <select id="accountview-6"
                     value={toId}
                     onChange={(e) => setToId(e.target.value)}
-                    className="w-full px-2.5 py-2 rounded-xl bg-[var(--tone-white)] border border-[var(--border-hairline)] text-xs font-medium"
+                    className="app-input font-medium"
                   >
                     {accounts.map((a) => (
                       <option key={a.id} value={a.id}>
@@ -477,10 +524,11 @@ export const AccountView: React.FC<AccountViewProps> = ({
                 <div className="relative flex items-center">
                   <input
                     type="text"
+                    inputMode="numeric"
                     value={formatNumberWithDots(transferAmount)}
                     onChange={(e) => setTransferAmount(e.target.value)}
                     placeholder="500.000"
-                    className="w-full px-3 py-2.5 pr-8 rounded-xl bg-[var(--tone-white)] border border-[var(--border-hairline)] text-sm font-semibold tabular-nums"
+                    className="app-input pr-8 font-semibold tabular-nums"
                   />
                   <span className="absolute right-3 text-xs font-semibold text-[var(--ink-muted)] pointer-events-none">
                     đ
@@ -489,13 +537,15 @@ export const AccountView: React.FC<AccountViewProps> = ({
               </div>
               <button
                 type="submit"
-                className="w-full py-3 rounded-xl bg-[var(--ink-primary)] text-[var(--tone-white)] text-xs font-semibold cursor-pointer"
+                disabled={transferring}
+                className="tap-scale w-full py-3 rounded-2xl bg-[var(--brand)] hover:bg-[var(--brand-dark)] text-[var(--tone-white)] text-xs font-semibold cursor-pointer disabled:opacity-40"
               >
-                Xác nhận chuyển nội bộ
+                {transferring ? 'Đang chuyển…' : 'Xác nhận chuyển'}
               </button>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
