@@ -1,0 +1,23 @@
+/* Hallmark v2 · scope: app · brand: Ví An */
+/* Central tokens for legacy screens, mapped to the Ví An system. */
+:root {
+  --shadow-auth:0 20px 60px -24px rgba(24,24,27,.12);
+  --tone-white:#fcfefd;
+  --tone-black:#111b17;
+  --focus-shadow:rgba(22,101,52,.12);
+  --color-10b981:#10B981;
+  --color-15803d:#15803D;
+  --color-22c55e:#22C55E;
+  --color-27272a:#27272A;
+  --color-34d399:#34D399;
+  --color-6ee7b7:#6EE7B7;
+  --color-78350f:#78350F;
+  --color-86efac:#86EFAC;
+  --color-92400e:#92400E;
+  --color-9ca3af:#9CA3AF;
+  --color-a1a1aa:#A1A1AA;
+  --color-bbf7d0:#BBF7D0;
+  --color-d1d5db:#D1D5DB;
+  --color-f59e0b:#F59E0B;
+  --color-fca5a5:#FCA5A5;
+}
