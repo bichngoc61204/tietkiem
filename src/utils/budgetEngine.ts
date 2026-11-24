@@ -52,27 +52,29 @@ export function calculateCycleBudgetMetrics(
   const todaySpent = spentOn(todayIndex);
   const remainingDays = totalCycleDays - todayIndex;
   const pastDelta = todayIndex * baseDailyAllowance - pastSpent;
-  const todayAllowance = mode === 'redistribute'
+  // Raw daily allowance from salary config
+  const configDailyAllowance = mode === 'redistribute'
     ? floorMoney((spendableLivingPool - pastSpent) / remainingDays)
     : floorMoney(Math.min(baseDailyAllowance, (spendableLivingPool - pastSpent) / remainingDays));
+  // Actual wallet balance (excluding savings wallets)
   const walletTotal = accounts ? accounts.filter(a => a.type !== 'savings').reduce((s, a) => s + a.balance, 0) : Infinity;
-  const walletReserved = Math.max(0, config.fixedBills - fixedPaid) + Math.max(0, config.savingsTarget - savingsMoved) + plannedReserveTotal;
-  const walletLimit = accounts ? floorMoney(walletTotal - walletReserved) : Infinity;
-  // Cap daily allowance by actual spendable wallet balance spread over remaining days
-  const walletBasedDailyLimit = walletLimit < Infinity ? floorMoney(walletLimit / remainingDays) : Infinity;
-  const effectiveTodayAllowance = Math.min(todayAllowance, walletBasedDailyLimit);
-  const todayDelta = floorMoney(effectiveTodayAllowance - todaySpent);
+  const walletLimit = walletTotal; // raw balance - no reservation subtraction here
+  // If wallet is tighter than budget config, spread wallet evenly over remaining days
+  const walletDailyLimit = walletTotal < Infinity && walletTotal < spendableLivingPool - livingSpent
+    ? floorMoney(walletTotal / remainingDays)
+    : Infinity;
+  const todayAllowance = Math.min(configDailyAllowance, walletDailyLimit);
+  const todayDelta = floorMoney(todayAllowance - todaySpent);
   const futureDaysCount = remainingDays - 1;
-  const effectiveFutureRemaining = floorMoney(walletLimit - effectiveTodayAllowance);
-  const futureDailyAllowance = futureAllowance(mode, Math.min(remainingLivingBudget, effectiveFutureRemaining), futureDaysCount, baseDailyAllowance);
-  const status = todayDelta < 0 ? 'overspent' : todaySpent >= effectiveTodayAllowance * .8 ? 'caution' : 'safe';
+  const futureDailyAllowance = futureAllowance(mode, Math.min(remainingLivingBudget, walletTotal < spendableLivingPool - livingSpent ? walletTotal - todayAllowance : remainingLivingBudget), futureDaysCount, baseDailyAllowance);
+  const status = todayDelta < 0 ? 'overspent' : todaySpent >= todayAllowance * .8 ? 'caution' : 'safe';
   const days: CalendarDaySummary[] = Array.from({ length: totalCycleDays }, (_, i) => {
-    const allowance = i < todayIndex ? baseDailyAllowance : i === todayIndex ? effectiveTodayAllowance : futureDailyAllowance;
+    const allowance = i < todayIndex ? baseDailyAllowance : i === todayIndex ? todayAllowance : futureDailyAllowance;
     const spent = spentOn(i);
     const delta = allowance - spent;
     return { dayIndex: i, ...getCycleDateInfo(i, config.paydayDay), phase: i < todayIndex ? 'past' : i === todayIndex ? 'today' : 'future', allowance, spent, delta, status: i > todayIndex ? 'future' : delta < 0 ? 'overspent' : 'safe', transactions: current.filter(t => t.cycleDayIndex === i) };
   });
-  return { totalLivingBudget, plannedReserveTotal, spendableLivingPool, totalSpentCycle, remainingLivingBudget, todayAllowance: effectiveTodayAllowance, todaySpent, todayDelta, todayStatus: status, futureDaysCount, futureDailyAllowance, redistributionPerDay: futureDailyAllowance - baseDailyAllowance, pastSafeSurplusTotal: Math.max(0, pastDelta), days, baseDailyAllowance, rolloverMode: mode, pastSpent, walletLimit };
+  return { totalLivingBudget, plannedReserveTotal, spendableLivingPool, totalSpentCycle, remainingLivingBudget, todayAllowance, todaySpent, todayDelta, todayStatus: status, futureDaysCount, futureDailyAllowance, redistributionPerDay: futureDailyAllowance - baseDailyAllowance, pastSafeSurplusTotal: Math.max(0, pastDelta), days, baseDailyAllowance, rolloverMode: mode, pastSpent, walletLimit };
 }
 function futureAllowance(mode: RolloverMode, remaining: number, days: number, baseline: number) {
   if (days <= 0) return 0;
