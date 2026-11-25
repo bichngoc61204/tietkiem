@@ -22,16 +22,29 @@ const BANK_BIN_MAP: Record<string, { name: string; vietqrId: string; appScheme: 
   '970415': { name: 'VietinBank', vietqrId: 'icb', appScheme: 'icb' },
   '970418': { name: 'BIDV', vietqrId: 'bidv', appScheme: 'bidv' },
   '970416': { name: 'ACB', vietqrId: 'acb', appScheme: 'acb' },
-  '970432': { name: 'VPBank', vietqrId: 'vpb', appScheme: 'vpbank' },
+  '970432': { name: 'VPBank', vietqrId: 'vpb', appScheme: 'vpb' },
   '970403': { name: 'Sacombank', vietqrId: 'stb', appScheme: 'stb' },
   '970405': { name: 'Agribank', vietqrId: 'vba', appScheme: 'vba' },
-  '970441': { name: 'VIB', vietqrId: 'vib', appScheme: 'vib' },
+  '970441': { name: 'VIB', vietqrId: 'vib', appScheme: 'vib-2' },
   '970448': { name: 'OCB', vietqrId: 'ocb', appScheme: 'ocb' },
   '970437': { name: 'HDBank', vietqrId: 'hdb', appScheme: 'hdb' },
   '970454': { name: 'BVBank (Timo)', vietqrId: 'timo', appScheme: 'timo' },
 };
 
 export const BANK_OPTIONS = Object.values(BANK_BIN_MAP).map(bank => ({ id: bank.vietqrId, name: bank.name, appId: bank.appScheme }));
+
+// Official iOS + Android catalog, checked 2026-11-25. Sacombank is a valid
+// recipient but is not listed as a sender app. Bank codes and app IDs differ.
+export const SENDER_BANKS = BANK_OPTIONS.filter(bank => bank.id !== 'stb').map(bank => ({
+  ...bank,
+  autofill: ['icb', 'bidv', 'ocb', 'acb', 'mb'].includes(bank.appId),
+}));
+
+export function bankForWallet(wallet: { id: string; name: string }) {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return SENDER_BANKS.find(bank => [bank.id, bank.appId, bank.name].some(value =>
+    normalize(value) === normalize(wallet.id) || normalize(value) === normalize(wallet.name)));
+}
 
 function parseTLV(input: string): Record<string, string> {
   const tags: Record<string, string> = {};
@@ -126,18 +139,30 @@ export function buildBankAppDeeplink(bankId: string, params: {
   accountNumber: string;
   amount: number;
   transferNote: string;
+  accountHolder?: string;
   returnUrl?: string;
 }): string {
+  if (!SENDER_BANKS.some(bank => bank.appId === bankId)) throw new Error('Ngân hàng gửi chưa hỗ trợ mở ứng dụng.');
+  if (!/^[A-Za-z0-9]{1,34}$/.test(params.accountNumber) || !Number.isSafeInteger(params.amount) || params.amount <= 0) throw new Error('Kiểm tra số tài khoản và số tiền chuyển.');
   const bank = Object.values(BANK_BIN_MAP).find(b => b.name.toLowerCase() === params.bankName.toLowerCase());
   if (!bank) throw new Error('Chưa hỗ trợ mở ngân hàng cho mã này. Hãy sao chép thông tin nhận tiền.');
   const q = new URLSearchParams({
     app: bankId,
-    ba: `${params.accountNumber}@${bank.appScheme}`,
+    ba: `${params.accountNumber}@${bank.vietqrId === 'mbbank' ? 'mb' : bank.vietqrId}`,
     am: String(Math.max(0, Math.round(params.amount))),
     tn: params.transferNote,
     url: params.returnUrl || (typeof window !== 'undefined' ? window.location.origin + window.location.pathname : 'https://www.vietqr.io/deeplink'),
   });
+  if (params.accountHolder) q.set('bn', params.accountHolder);
   return `https://dl.vietqr.io/pay?${q.toString()}`;
+}
+
+/** VCB iOS launch-only scheme, published by the official VietQR handoff page
+ * https://dl.vietqr.io/pay?app=vcb (iPhone response checked 2026-11-25).
+ * It cannot prefill a payment. Keep the HTTPS link as an alternate route.
+ */
+export function bankLaunchHref(appId: string, webLink: string, isIOS: boolean) {
+  return isIOS && appId === 'vcb' ? 'vietcombankmobile://' : webLink;
 }
 
 export function crc16(text: string): string {

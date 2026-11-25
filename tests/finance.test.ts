@@ -3,7 +3,8 @@ import { reset, read } from './fakeFirestore';
 import { resetTestFinanceWithBackup, restoreTestFinanceBackup, addWallet, setupInitialFinance, saveSalarySettings, createPendingTransactionWithHold, confirmPendingTransaction, cancelPendingTransactionWithRefund, recordExpenseAndDeductWallet, deleteTransactionAndRestoreWallet, completePlannedExpense, sweepSurplusToSavings, transferInternalWallets, depositToWallet } from '../src/services/firestoreService';
 import { calculateCycleBudgetMetrics as budget, previewPaymentImpact, transactionsInCycle } from '../src/utils/budgetEngine';
 import { getSalaryCycle } from '../src/utils/cycle';
-import { crc16, parseVietQRPayload, buildBankAppDeeplink } from '../src/utils/vietqr';
+import { crc16, parseVietQRPayload, buildBankAppDeeplink, SENDER_BANKS, bankForWallet, bankLaunchHref } from '../src/utils/vietqr';
+import { prepareBankHandoff, reserveBankHandoff } from '../src/utils/bankHandoff';
 import type { Transaction, SalaryConfig } from '../src/types/finance';
 let count = 0;
 async function test(name: string, fn: () => unknown) { await fn(); count++; console.log(`✓ ${name}`); }
@@ -36,7 +37,7 @@ await test('Old cycles excluded, pending expenses counted', () => { const old = 
 await test('Planned expense completion never double charges daily budget', () => { const p = { id: 'p', title: 'Plan', amount: 300000, category: 'living' as const, dueDateLabel: '', completed: false }; const before = budget(cfg, [], [p], 'strict'); const after = budget(cfg, [{ ...tx('paid', 300000), plannedExpenseId: 'p' }], [{ ...p, completed: true }], 'strict'); assert.equal(before.remainingLivingBudget, after.remainingLivingBudget); assert.equal(after.todaySpent, 0); assert.equal(after.totalSpentCycle, 300000); });
 await test('Savings transfer within monthly target never reserves twice', () => { const c = { ...cfg, savingsTarget: 600000 }; const a = budget(c, [], [], 'strict'); const b = budget(c, [{ ...tx('s', 400000), type: 'internal', savingsDirection: 1 }], [], 'strict'); assert.equal(a.remainingLivingBudget, b.remainingLivingBudget); });
 await test('Savings beyond target and loans reduce available spending', () => { const m = budget(cfg, [{ ...tx('s', 400000), type: 'internal', savingsDirection: 1 }, { ...tx('loan', 100000), type: 'loan' }], [], 'strict'); assert.equal(m.remainingLivingBudget, 2500000); });
-await test('Actual wallet funds cap the safe-to-spend number', () => { const m = budget(cfg, [], [], 'strict', [{ id: 'cash', name: 'Cash', balance: 25000, type: 'cash' }]); assert.equal(m.todayDelta, 25000); });
+await test('Tight wallet is spread across remaining days with no overdraft', () => { const m = budget(cfg, [], [], 'strict', [{ id: 'cash', name: 'Cash', balance: 25000, type: 'cash' }]); assert.equal(m.todayDelta, Math.floor(25000 / 30)); assert.equal(m.walletLimit,25000); assert.ok(m.todayDelta + m.futureDailyAllowance * m.futureDaysCount <= 25000); });
 await test('Payment preview matches recalculation in both modes', () => { for (const mode of ['strict', 'redistribute'] as const) { const m = budget(cfg, [], [], mode); const p = previewPaymentImpact(m, 150000); const a = budget(cfg, [tx('paid', 150000)], [], mode); assert.equal(p.newFutureDailyAllowance, a.futureDailyAllowance); assert.equal(p.afterTodayDelta, a.todayDelta); } });
 await test('Last cycle day has zero future days and no divide by zero', () => { const m = budget({ ...cfg, todayIndex: 29 }, [], [], 'strict'); assert.equal(m.futureDaysCount, 0); assert.equal(m.futureDailyAllowance, 0); assert.equal(previewPaymentImpact(m, 10).newFutureDailyAllowance, 0); });
 const tlv = (id: string, value: string) => id + String(value.length).padStart(2, '0') + value;
@@ -45,8 +46,71 @@ await test('VietQR valid checksum parses amount and beneficiary', () => { const 
 await test('Damaged, malformed and arbitrary QR rejected', () => { assert.equal(parseVietQRPayload(payload + '0000'), null); assert.equal(parseVietQRPayload('https://example.com'), null); assert.equal(parseVietQRPayload('0002013802x'), null); });
 await test('Bank deeplink uses bank code and return URL', () => { const url = new URL(buildBankAppDeeplink('vcb', { bankName: 'MB Bank', accountNumber: '123456', amount: 35000, transferNote: 'TEST', returnUrl: 'https://example.test/' })); assert.equal(url.searchParams.get('ba'), '123456@mb'); assert.equal(url.searchParams.get('app'), 'vcb'); assert.equal(url.searchParams.get('url'), 'https://example.test/'); });
 
+await test('Sender catalog uses official VPBank and MyVIB app IDs', () => {
+  assert.equal(SENDER_BANKS.find(b => b.name === 'VPBank')?.appId, 'vpb');
+  assert.equal(SENDER_BANKS.find(b => b.name === 'VIB')?.appId, 'vib-2');
+  assert.equal(SENDER_BANKS.some(b => b.id === 'stb'), false);
+  assert.equal(SENDER_BANKS.find(b => b.id === 'vcb')?.autofill, false);
+});
+await test('Wallet matching accepts IDs and normalized names, never unrelated wallets', () => {
+  assert.equal(bankForWallet({ id:'mbbank',name:'Ví chính' })?.appId,'mb');
+  assert.equal(bankForWallet({ id:'custom',name:'Vietcombank' })?.appId,'vcb');
+  assert.equal(bankForWallet({ id:'custom',name:'Tiền mặt' }),undefined);
+});
+await test('Bank launch rejects unsupported apps, unknown recipient and invalid amounts', () => {
+  const data={bankName:'MB Bank',accountNumber:'12345',amount:50000,transferNote:'TEST'};
+  assert.throws(()=>buildBankAppDeeplink('vpbank',data));
+  assert.throws(()=>buildBankAppDeeplink('vcb',{...data,bankName:'Unknown'}));
+  assert.throws(()=>buildBankAppDeeplink('vcb',{...data,amount:-1}));
+  assert.equal(new URL(buildBankAppDeeplink('vpb',{...data,bankName:'VIB',accountHolder:'TEST USER'})).searchParams.get('ba'),'12345@vib');
+});
+await test('iPhone VCB uses verified launch-only scheme, other banks retain payment link', () => {
+  const link='https://dl.vietqr.io/pay?app=vcb';
+  assert.equal(bankLaunchHref('vcb',link,true),'vietcombankmobile://');
+  assert.equal(bankLaunchHref('vcb',link,false),link);
+  assert.equal(bankLaunchHref('mb',link,true),link);
+});
+await test('Bank tab is reserved in the tap and navigates only after the hold commits', async () => {
+  const events:string[]=[];
+  let release!:(saved:boolean)=>void;
+  const pending=new Promise<boolean>(resolve=>release=resolve);
+  const result=prepareBankHandoff('https://dl.vietqr.io/pay',()=>{ events.push('save'); return pending; },()=>{
+    events.push('reserve'); return {launch:()=>{events.push('launch');return true;},close:()=>{events.push('close');}};
+  });
+  assert.deepEqual(events,['reserve','save']);
+  release(true);
+  assert.deepEqual(await result,{saved:true,launched:true});
+  assert.deepEqual(events,['reserve','save','launch']);
+});
+await test('Bank handoff navigates only to official routes and keeps a tappable fallback', () => {
+  const nodes:any[]=[]; const destinations:string[]=[];
+  const tab={closed:false,opener:{},document:{title:'',createElement:()=>({style:{}}),body:{append:(el:any)=>nodes.push(el),replaceChildren:(el:any)=>{nodes.splice(0,nodes.length,el);}}},location:{replace:(url:string)=>destinations.push(url)},close:()=>{}};
+  const handoff=reserveBankHandoff((()=>tab) as unknown as typeof window.open)!;
+  assert.equal(handoff.launch('javascript:alert(1)'),false);
+  assert.equal(handoff.launch('https://evil.example/pay'),false);
+  assert.equal(handoff.launch('vietcombankmobile://'),true);
+  assert.equal(nodes[0].href,'vietcombankmobile://');
+  assert.equal(destinations[0],'vietcombankmobile://');
+  tab.closed=true;
+  assert.equal(handoff.launch('https://dl.vietqr.io/pay?app=vcb'),false);
+});
+await test('Failed save closes the reserved bank tab without launching', async () => {
+  let closed=0,launched=0;
+  const reserve=()=>({launch:()=>{launched++;return true;},close:()=>{closed++;}});
+  assert.equal((await prepareBankHandoff('url',async()=>false,reserve)).saved,false);
+  await assert.rejects(prepareBankHandoff('url',async()=>{throw Error('permission denied');},reserve));
+  assert.equal(launched,0); assert.equal(closed,2);
+});
+await test('Blocked popup or closed tab leaves a saved hold with direct retry available', async () => {
+  assert.deepEqual(await prepareBankHandoff('url',async()=>true,()=>null),{saved:true,launched:false});
+  let closed=0;
+  assert.deepEqual(await prepareBankHandoff('url',async()=>true,()=>({launch:()=>false,close:()=>{closed++;}})),{saved:true,launched:false});
+  assert.equal(closed,1);
+  assert.equal(reserveBankHandoff((()=>null) as typeof window.open),null);
+});
+
 await test('Fixed bill uses its reserve, without charging daily budget twice', () => { const c = { ...cfg, fixedBills: 600000 }; const before = budget(c, [], [], 'strict'); const after = budget(c, [{ ...tx('rent', 600000), budgetSource: 'fixed' }], [], 'strict'); assert.equal(after.todaySpent, 0); assert.equal(after.remainingLivingBudget, before.remainingLivingBudget); const over = budget(c, [{ ...tx('rent', 700000), budgetSource: 'fixed' }], [], 'strict'); assert.equal(over.remainingLivingBudget, before.remainingLivingBudget - 100000); });
-await test('Fixed bill releases wallet reservation after payment', () => { const c = { ...cfg, fixedBills: 600000 }; const before = budget(c, [], [], 'strict', [{id:'bank',name:'Bank',type:'checking',balance:1000000}]); const after = budget(c, [{ ...tx('rent', 600000), budgetSource:'fixed' }], [], 'strict', [{id:'bank',name:'Bank',type:'checking',balance:400000}]); assert.equal(before.walletLimit, after.walletLimit); });
+await test('Wallet limit tracks the real recorded balance after a fixed payment', () => { const c = { ...cfg, fixedBills: 600000 }; const before = budget(c, [], [], 'strict', [{id:'bank',name:'Bank',type:'checking',balance:1000000}]); const after = budget(c, [{ ...tx('rent', 600000), budgetSource:'fixed' }], [], 'strict', [{id:'bank',name:'Bank',type:'checking',balance:400000}]); assert.equal(before.walletLimit, 1000000); assert.equal(after.walletLimit,400000); });
 await test('QR cannot reserve from cash', async () => { setup(); await assert.rejects(createPendingTransactionWithHold(uid, { ...tx('cash-qr'), accountId:'cash' })); });
 
 await test('Changing payday reclassifies dated expenses instead of hiding them', () => { const dated = { ...tx('dated'), cycleStartDate: '2026-11-05', cycleDayIndex: 15 }; const result = transactionsInCycle([dated], 10, new Date(2026, 10, 25)); assert.equal(result.length, 1); assert.equal(result[0].cycleDayIndex, 10); });

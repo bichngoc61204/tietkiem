@@ -69,6 +69,7 @@ export function seedQA() {
   reset({
     'users/qa-user': { uid: 'qa-user', email: 'qa@example.test', displayName: 'Bản thử nghiệm', role: 'user', plan: 'trial', subscriptionStatus: 'trial', planExpiresAt: null, lastLicenseCode: null, salaryConfig, rolloverMode: 'strict', avoidedImpulseTotal: 0, allocatedSavings: 0, createdAt: new Date().toISOString() },
     'users/qa-user/accounts/mbbank': { id: 'mbbank', name: 'MB Bank', balance: 11885000, type: 'checking' },
+    'users/qa-user/accounts/vcb': { id: 'vcb', name: 'Vietcombank', balance: 0, type: 'checking' },
     'users/qa-user/accounts/cash': { id: 'cash', name: 'Tiền mặt', balance: 500000, type: 'cash' },
     'users/qa-user/accounts/savings': { id: 'savings', name: 'Tiết kiệm', balance: 3000000, type: 'savings' },
     'users/qa-user/transactions/lunch': { ...common, id: 'lunch', merchant: 'Cơm trưa', amount: 45000 },

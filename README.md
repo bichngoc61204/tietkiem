@@ -1,6 +1,6 @@
 # Ví An
 
-Web mobile quản lý chi tiêu cá nhân: đọc VietQR, mở đúng app ngân hàng của ví nguồn, xác nhận khoản chi và dành tiền cho mục tiêu tiết kiệm.
+Web mobile quản lý chi tiêu cá nhân: đọc VietQR, chọn và mở app ngân hàng gửi, xác nhận khoản chi và dành tiền cho mục tiêu tiết kiệm.
 
 ## Chạy ứng dụng
 
@@ -9,7 +9,7 @@ npm install
 npm run dev -- --host 127.0.0.1
 ```
 
-Dữ liệu `hung@gmail.com` hiện là dữ liệu thử; bản sao trước khi làm sạch có nút khôi phục tại Tài khoản.
+Dữ liệu ứng dụng nằm trên Firebase. Chế độ QA bên dưới dùng dữ liệu tách biệt để kiểm thử.
 
 Bản này dùng Firebase được cấu hình trong `src/lib/firebase.ts` và yêu cầu đăng nhập. Chưa tự triển khai production. Khi cập nhật backend, publish `firestore.rules` mới cùng phiên bản frontend vì có thêm loại `income` và trạng thái `cancelled`/`deleted`.
 
@@ -28,7 +28,7 @@ npm test
 npm run build
 ```
 
-`npm test` chạy 49 ca cho bộ tính ngân sách và dịch vụ ghi tiền qua adapter có retry giao dịch. Bộ test không thay thế kiểm thử rules.
+`npm test` chạy 57 ca cho bộ tính ngân sách và dịch vụ ghi tiền qua adapter có retry giao dịch. Bộ test không thay thế kiểm thử rules.
 
 Kiểm thử Firestore Emulator riêng:
 
@@ -56,3 +56,11 @@ Bộ integration gồm 13 ca, dùng SDK và rules thật trên dự án demo. Sc
 - `QA_REPORT.md`: kết quả đã kiểm tra và các phần cần kiểm chứng trên thiết bị/tài khoản thật.
 
 Ví An ghi số liệu trong sổ, không truy cập số dư ngân hàng và không tự chuyển tiền. Việc mở app không phải bằng chứng thanh toán; người dùng xác nhận khi quay lại.
+
+## Luồng QR trên điện thoại
+
+Quét/tải ảnh VietQR → kiểm tra người nhận và số tiền → chọn ngân hàng gửi → bấm mở app. Nút chính luôn nằm ở cuối bảng. Khoản chờ được lưu trước khi điều hướng; xác nhận không trừ tiền lần hai, hủy hoàn tiền trong sổ.
+
+Ngân hàng gửi là app bên ngoài; ví ghi chi là ngân sách trong Ví An. Nếu còn nhiều ví cũ, màn hình cho chọn rõ ví hạch toán. Việc mở app không đọc số dư hay xác thực kết quả chuyển tiền.
+
+Trên iPhone, VCB dùng scheme mở ứng dụng `vietcombankmobile://` mà trang chuyển tiếp chính thức VietQR công bố; có liên kết HTTPS VietQR dự phòng. VCB chưa hỗ trợ tự điền theo catalog VietQR hiện tại. Nút “Chép STK & mở Vietcombank” khởi động sao chép trong lần chạm để dán vào VCB, không cần quét lại. Nếu Safari chặn mở tự động, người dùng chạm liên kết mở trực tiếp đã giữ sẵn. Cần kiểm chứng hành vi app trên iPhone thật.

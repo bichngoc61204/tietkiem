@@ -291,7 +291,7 @@ export default function App() {
       accountHolder: '',
       amount: 0,
       category: 'food',
-      accountId: accounts.find((a) => a.type === 'checking')?.id || '',
+      accountId: accounts.find(a => a.id === 'vian' && a.type === 'checking')?.id || accounts.find((a) => a.type === 'checking')?.id || '',
       transferNote: '',
       qrMode: 'VietQR',
     });
@@ -316,7 +316,7 @@ export default function App() {
     if (!qrDraft.accountNumber.trim() || !qrDraft.bankName.trim()) { notify('Kiểm tra ngân hàng và số tài khoản nhận.', 'caution'); return false; }
     const tx: Transaction = { id: crypto.randomUUID(), merchant: qrDraft.merchant || qrDraft.accountHolder, note: qrDraft.transferNote, category: qrDraft.category, accountId: qrDraft.accountId, amount: qrDraft.amount, type: 'expense', status: 'pending', cycleDayIndex: salaryConfig.todayIndex, timeLabel: 'Chờ xác nhận', cycleStartDate: cycle.key, budgetSource: qrDraft.budgetSource || 'daily', ...(qrDraft.plannedExpenseId ? { plannedExpenseId: qrDraft.plannedExpenseId } : {}) };
     const ok = await mutate(uid => createPendingTransactionWithHold(uid, tx), 'Đã giữ số tiền trong sổ. Chuyển tiền trong ứng dụng ngân hàng, rồi quay lại xác nhận.');
-    if (ok) { setPendingQrTxId(tx.id); setQrStep(3); }
+    if (ok) { setPendingQrTxId(tx.id); }
     return ok;
   };
   const handleConfirmPayment = async (id: string) => {
@@ -746,7 +746,7 @@ export default function App() {
           )}
 
           {(activeTab === 'plan' || activeTab === 'savings') && (
-            <div key="view-plan" className="max-w-2xl mx-auto animate-page-enter">
+            <div key={`view-${activeTab}`} className="max-w-2xl mx-auto animate-page-enter">
               <PlanView
                 key={activeTab}
                 metrics={metrics}
@@ -913,6 +913,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveTab('home')}
+              aria-current={activeTab === 'home' ? 'page' : undefined}
               className={`flex flex-col items-center justify-center gap-1 py-1 transition cursor-pointer ${
                 activeTab === 'home' ? 'text-[var(--brand)] font-semibold' : 'text-[var(--ink-muted)] font-medium'
               }`}
@@ -927,6 +928,7 @@ export default function App() {
                 setPlanInitialSubTab('calendar');
                 setActiveTab('plan');
               }}
+              aria-current={activeTab === 'plan' ? 'page' : undefined}
               className={`relative flex flex-col items-center justify-center gap-1 py-1 transition cursor-pointer ${
                 activeTab === 'plan' ? 'text-[var(--brand)] font-semibold' : 'text-[var(--ink-muted)] font-medium'
               }`}
@@ -944,6 +946,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveTab('savings')}
+              aria-current={activeTab === 'savings' ? 'page' : undefined}
               className={`flex flex-col items-center justify-center gap-1 py-1 transition cursor-pointer ${
                 activeTab === 'savings' ? 'text-[var(--brand)] font-semibold' : 'text-[var(--ink-muted)] font-medium'
               }`}
@@ -955,6 +958,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveTab('account')}
+              aria-current={activeTab === 'account' ? 'page' : undefined}
               className={`flex flex-col items-center justify-center gap-1 py-1 transition cursor-pointer ${
                 activeTab === 'account' ? 'text-[var(--brand)] font-semibold' : 'text-[var(--ink-muted)] font-medium'
               }`}
@@ -975,7 +979,7 @@ export default function App() {
           metrics={metrics}
           plannedExpenses={plannedExpenses}
           pendingTxId={pendingQrTxId}
-          onClose={() => setIsQrOpen(false)}
+          onClose={() => { if (!busyRef.current) setIsQrOpen(false); }}
           onSetStep={setQrStep}
           onUpdateDraft={setQrDraft}
           onProceedToBank={handleProceedToBank}

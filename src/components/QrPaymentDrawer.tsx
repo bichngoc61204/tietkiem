@@ -1,13 +1,16 @@
+// Lucian UX/UI Prompt #042 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#042
 /* Hallmark · waive 28b · Video is a live camera stream started on request · A poster would mask camera status; there is no prerecorded video. */
 import { useModal } from '../hooks/useModal';
 import React, { useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
-import { Camera, Check, Copy, ExternalLink, ImagePlus, QrCode, X } from 'lucide-react';
+import { Camera, Check, Copy, ExternalLink, ImagePlus, QrCode, X, ArrowUpRight, Landmark, LoaderCircle } from 'lucide-react';
 import { CATEGORIES } from '../data/mockData';
 import { Account, CategoryId, CycleBudgetMetrics, PlannedExpense } from '../types/finance';
 import { previewPaymentImpact } from '../utils/budgetEngine';
 import { formatNumberWithDots, formatVND, parseNumberWithDots } from '../utils/format';
-import { BANK_OPTIONS, buildBankAppDeeplink, parseVietQRPayload } from '../utils/vietqr';
+import { BANK_OPTIONS, SENDER_BANKS, bankForWallet, bankLaunchHref, buildBankAppDeeplink, parseVietQRPayload } from '../utils/vietqr';
+import { prepareBankHandoff } from '../utils/bankHandoff';
+import './qr-payment.css';
 
 export interface QrDraft {
   merchant: string;
@@ -58,7 +61,25 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
   onCancelPayment,
   onNotify,
 }) => {
-  const modalRef = useModal(isOpen, onClose);
+  const launchInFlight = useRef(false);
+  const modalRef = useModal(isOpen, () => { if (!launchInFlight.current && !busy) onClose(); });
+  const [senderAppId, setSenderAppId] = useState(() => {
+    const wallet = accounts.find(a => a.id === draft.accountId);
+    return wallet ? bankForWallet(wallet)?.appId || '' : '';
+  });
+  const [launchStatus, setLaunchStatus] = useState('');
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const previousStep = useRef(step);
+  const direction = step >= previousStep.current ? 1 : -1;
+  useEffect(() => {
+    previousStep.current = step;
+    bodyRef.current?.scrollTo({ top: 0 });
+    titleRef.current?.focus({ preventScroll: true });
+  }, [step]);
+  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
   const [copiedKey, setCopiedKey] = useState<'account' | 'note' | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -68,7 +89,9 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const defaultWalletId = accounts.find((a) => a.type === 'checking')?.id || '';
+  const defaultWalletId = accounts.find(a => a.id === 'vian' && a.type === 'checking')?.id || accounts.find((a) => a.type === 'checking')?.id || '';
+  const checkingWallets = accounts.filter(a => a.type === 'checking');
+  const senderBank = SENDER_BANKS.find(bank => bank.appId === senderAppId);
 
   const applyScannedResult = (parsed: NonNullable<ReturnType<typeof parseVietQRPayload>>) => {
     setCameraActive(false);
@@ -161,8 +184,34 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
   const impact = previewPaymentImpact(metrics, draft.amount);
   const selectedWallet = accounts.find((a) => a.id === draft.accountId);
 
+  let bankLink = '';
+  let linkError = '';
+  if (senderBank && draft.amount > 0 && draft.accountNumber) {
+    try { bankLink = buildBankAppDeeplink(senderBank.appId, draft); }
+    catch (error) { linkError = error instanceof Error ? error.message : 'Chưa tạo được liên kết ngân hàng.'; }
+  }
+  const canLaunch = !!bankLink && selectedWallet?.type === 'checking' && draft.amount <= selectedWallet.balance;
+  const launchHref = senderBank ? bankLaunchHref(senderBank.appId, bankLink, isIOS) : bankLink;
+
+  const handleLaunchBank = async () => {
+    if (busy || launchInFlight.current || !canLaunch) return;
+    launchInFlight.current = true;
+    // Start clipboard access in the same tap as well (Safari requires activation).
+    if (!senderBank?.autofill) void handleCopy(draft.accountNumber, 'account');
+    // Reserve within the user's tap. Opening a tab after awaiting Firestore gets
+    // blocked by mobile browsers. Navigate it only after the hold has committed.
+    try {
+      const { saved, launched } = await prepareBankHandoff(launchHref, onProceedToBank);
+      if (!saved) return;
+      setLaunchStatus(launched ? 'Đã gửi yêu cầu mở ngân hàng. Nếu app chưa mở, chạm nút bên dưới.' : 'Trình duyệt đã chặn cửa sổ mở app. Chạm nút bên dưới để mở trực tiếp.');
+      onSetStep(3);
+    } catch {
+      onNotify('Chưa mở được ngân hàng. Vui lòng thử lại.', 'caution');
+    } finally { launchInFlight.current = false; }
+  };
+
   const handleCopy = async (text: string, key: 'account' | 'note') => {
-    try { await navigator.clipboard.writeText(text); setCopiedKey(key); setTimeout(() => setCopiedKey(null), 2000); }
+    try { await navigator.clipboard.writeText(text); setCopiedKey(key); if (copyTimer.current) clearTimeout(copyTimer.current); copyTimer.current = setTimeout(() => setCopiedKey(null), 2000); }
     catch { onNotify('Chưa sao chép được. Bạn có thể chọn và chép thông tin bên dưới.', 'caution'); }
   };
 
@@ -201,22 +250,24 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
   };
 
   return (
-    <div ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Thanh toán QR" className="fixed inset-0 z-50 bg-[var(--ink-primary)]/60 backdrop-blur-[2px] flex items-end sm:items-center justify-center sm:p-4 animate-backdrop">
+    <div ref={modalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Thanh toán QR" className="qr-payment fixed inset-0 z-50 bg-[var(--ink-primary)]/60 backdrop-blur-[2px] flex items-end sm:items-center justify-center sm:p-4 animate-backdrop">
       <div className="w-full max-w-md bg-[var(--bg-canvas)] border border-[var(--border-hairline)] rounded-t-2xl sm:rounded-2xl max-h-[92dvh] flex flex-col overflow-hidden shadow-lg animate-sheet-up">
         {/* Header */}
         <div className="bg-[var(--tone-white)] px-5 pt-4 pb-3 border-b border-[var(--border-hairline)] space-y-2.5">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-semibold text-[var(--brand)]">Bước {step}/3</p>
-              <h2 className="text-sm font-semibold text-[var(--ink-primary)]">
+              <h2 ref={titleRef} tabIndex={-1} className="text-sm font-semibold text-[var(--ink-primary)]">
                 {step === 1 && 'Quét mã VietQR'}
-                {step === 2 && 'Nhập số tiền & mục đích'}
-                {step === 3 && 'Chuyển tiền & xác nhận'}
+                {step === 2 && 'Chuyển cho ai, gửi từ đâu?'}
+                {step === 3 && 'Chuyển xong, quay lại đây nhé'}
               </h2>
             </div>
             <button
               type="button"
+              disabled={busy}
               onClick={() => {
+                if (launchInFlight.current) return;
                 setCameraActive(false);
                 onClose();
               }}
@@ -227,20 +278,22 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-3 gap-1.5">
-            {[1, 2, 3].map((s) => (
-              <div
-                key={s}
-                className={`h-1 rounded-full transition-colors ${
-                  s <= step ? 'bg-[var(--brand)]' : 'bg-[var(--border-hairline)]'
-                }`}
-              />
+          <ol className="u042-steps" aria-label="Các bước chuyển khoản">
+            <li className="u042-line" aria-hidden="true" style={{ '--p': (step - 1) / 2 } as React.CSSProperties}><i /></li>
+            {['Quét mã', 'Chọn ngân hàng', 'Xác nhận'].map((label, index) => (
+              <li key={label} className={`u042-st ${index + 1 === step ? 'cur' : index + 1 < step ? 'done' : ''}`}>
+                <span className="u042-dot" aria-current={index + 1 === step ? 'step' : undefined}>
+                  <span>{index + 1}</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.4l3 3 6-6.4" /></svg>
+                </span>
+                <small>{label}</small>
+              </li>
             ))}
-          </div>
+          </ol>
         </div>
 
         {/* Body */}
-        <div className="p-5 overflow-y-auto space-y-4">
+        <div ref={bodyRef} className="qr-scroll p-5 overflow-y-auto">
+          <fieldset key={step} disabled={busy} className="qr-pane space-y-4" style={{ '--qr-dir': direction } as React.CSSProperties}>
           {/* STEP 1: PURE SCANNER */}
           {step === 1 && (
             <div className="space-y-3">
@@ -314,7 +367,7 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
                 <div className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 space-y-2.5">
                   <input
                     type="text"
-                    placeholder="Tên người nhận / Quán"
+                    aria-label="Tên người nhận hoặc quán" placeholder="Tên người nhận / Quán"
                     value={draft.merchant}
                     onChange={(e) =>
                       onUpdateDraft({
@@ -327,7 +380,7 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <select
-                      value={draft.bankName}
+                      aria-label="Ngân hàng nhận" value={draft.bankName}
                       onChange={(e) => onUpdateDraft({ ...draft, bankName: e.target.value })}
                       className="px-3 py-2 rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-hairline)] text-xs text-[var(--ink-primary)]"
                     >
@@ -339,7 +392,7 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
                     </select>
                     <input
                       type="text"
-                      placeholder="Số tài khoản"
+                      aria-label="Số tài khoản nhận" placeholder="Số tài khoản"
                       value={draft.accountNumber}
                       onChange={(e) => onUpdateDraft({ ...draft, accountNumber: e.target.value })}
                       className="px-3 py-2 rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-hairline)] text-xs text-[var(--ink-primary)] tabular-nums"
@@ -385,27 +438,53 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
                 <span className="text-xs font-medium text-[var(--ink-muted)]">{draft.qrMode}</span>
               </div>
 
-              {/* Recipient Info */}
-              <div className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-3.5">
-                <p className="text-xs text-[var(--ink-muted)]">{draft.bankName}</p>
-                <p className="text-sm font-semibold text-[var(--ink-primary)] truncate">
-                  {draft.accountHolder || draft.merchant}
-                </p>
-                <p className="text-xs text-[var(--ink-muted)] tabular-nums truncate">
-                  STK: {draft.accountNumber}
-                </p>
+              <div className="qr-recipient">
+                <span className="qr-recipient-avatar" aria-hidden="true"><ArrowUpRight /></span>
+                <div>
+                  <p className="helper-text">Người nhận · {draft.bankName}</p>
+                  <p className="qr-recipient-name">{draft.accountHolder || draft.merchant}</p>
+                  <p className="tabular-nums">{draft.accountNumber}</p>
+                </div>
+                <button type="button" onClick={() => handleCopy(draft.accountNumber, 'account')} aria-label="Sao chép số tài khoản nhận" className="qr-copy">
+                  {copiedKey === 'account' ? <Check size={18} /> : <Copy size={18} />}
+                </button>
               </div>
+
+              <section className="qr-sender" aria-labelledby="qr-sender-title">
+                <h3 id="qr-sender-title">Bạn gửi từ ngân hàng nào?</h3>
+                <div className="qr-bank-options" role="group" aria-label="Ngân hàng gửi thường dùng">
+                  {['vcb', 'mb', 'acb'].map(id => SENDER_BANKS.find(bank => bank.appId === id)!).map(bank => (
+                    <button type="button" key={bank.id} aria-pressed={senderAppId === bank.appId} className={`qr-bank ${senderAppId === bank.appId ? 'is-selected' : ''}`} onClick={() => {
+                      setSenderAppId(bank.appId);
+                    }}>
+                      <span className="qr-bank-mark" aria-hidden="true"><Landmark size={20} /></span>
+                      <span><strong>{bank.name}</strong><small>{bank.autofill ? 'Có tự điền' : 'Mở ứng dụng'}</small></span>
+                      {senderAppId === bank.appId && <Check size={18} aria-hidden="true" />}
+                    </button>
+                  ))}
+                </div>
+                <label className="helper-text" htmlFor="qr-sender-bank">Chọn ngân hàng gửi</label>
+                <select id="qr-sender-bank" className="app-input" value={senderAppId} onChange={e => {
+                  setSenderAppId(e.target.value);
+                }}>
+                  <option value="">Chọn ngân hàng của bạn</option>
+                  {SENDER_BANKS.map(bank => <option key={bank.appId} value={bank.appId}>{bank.name}{bank.autofill ? ' · có tự điền' : ''}</option>)}
+                </select>
+                {checkingWallets.length > 1 && <><label className="helper-text" htmlFor="qr-ledger-wallet">Ví ghi khoản chi trong sổ</label><select id="qr-ledger-wallet" className="app-input" value={draft.accountId} onChange={e => onUpdateDraft({ ...draft, accountId: e.target.value })}>{checkingWallets.map(wallet => <option key={wallet.id} value={wallet.id}>{wallet.name} · {formatVND(wallet.balance)}</option>)}</select></>}
+                <p className="helper-text">Ghi chi từ {selectedWallet?.name || 'ví của bạn'} trong sổ · {selectedWallet ? formatVND(selectedWallet.balance) : 'Chưa có ví chi tiêu'}. Số dư này do bạn quản lý, không liên kết ngân hàng.</p>
+                {senderBank && <p className="qr-bank-notice">{senderBank.autofill ? `${senderBank.name} có hỗ trợ điền sẵn thông tin. Hãy kiểm tra người nhận trong app trước khi chuyển.` : `${senderBank.name} hiện chỉ hỗ trợ mở app, chưa tự điền. Chép STK tại đây để dán trong app, không cần quét lại.`}</p>}
+              </section>
 
               {/* Amount + Purpose + Wallet */}
               <div className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 space-y-3.5">
                 <div>
-                  <label className="block text-xs font-medium text-[var(--ink-muted)] mb-1">
+                  <label htmlFor="qr-amount" className="block text-xs font-medium text-[var(--ink-muted)] mb-1">
                     Số tiền (VND)
                   </label>
                   <div className="relative flex items-center">
                     <input
                       type="text"
-                      inputMode="numeric" placeholder="0"
+                      id="qr-amount" inputMode="numeric" placeholder="0"
                       value={draft.amount ? formatNumberWithDots(draft.amount) : ''}
                       onChange={(e) =>
                         onUpdateDraft({ ...draft, amount: parseNumberWithDots(e.target.value) })
@@ -438,13 +517,13 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
                   <label className="block text-xs font-medium text-[var(--ink-muted)] mb-1.5">
                     Mục đích chi tiêu
                   </label>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div role="group" aria-label="Mục đích chi tiêu" className="flex flex-wrap gap-1.5">
                     {Object.values(CATEGORIES).map((c) => {
                       const active = draft.category === c.id;
                       return (
                         <button
                           key={c.id}
-                          type="button"
+                          type="button" aria-pressed={active}
                           onClick={() => onUpdateDraft({ ...draft, category: c.id })}
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                             active
@@ -469,24 +548,7 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
                   <option value="fixed">Chi phí cố định đã dự trù</option>
                   {plannedExpenses.filter(p => !p.completed).map(p => <option key={p.id} value={`plan:${p.id}`} disabled={draft.qrMode === 'QR Động' && p.amount !== draft.amount}>{p.title}: {formatVND(p.amount)}</option>)}
                 </select>
-                <div>
-                  <label className="block text-xs font-medium text-[var(--ink-muted)] mb-1.5" htmlFor="qrpaymentdrawer-1">
-                    Trừ từ ví
-                  </label>
-                  <select id="qrpaymentdrawer-1"
-                    value={draft.accountId}
-                    onChange={(e) => onUpdateDraft({ ...draft, accountId: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-hairline)] text-xs font-semibold text-[var(--ink-primary)] tabular-nums"
-                  >
-                    {accounts
-                      .filter((a) => a.type === 'checking')
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name} / {formatVND(a.balance)}
-                        </option>
-                      ))}
-                  </select>
-                </div>
+
               </div>
 
               {/* Compact Impact Check */}
@@ -509,14 +571,7 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
                 </div>
               </div>}
 
-              <button
-                type="button"
-                onClick={onProceedToBank}
-                disabled={busy || !selectedWallet || draft.amount <= 0 || draft.amount > selectedWallet.balance}
-                className="w-full py-3.5 px-4 rounded-2xl bg-[var(--brand)] hover:bg-[var(--brand-dark)] text-[var(--tone-white)] text-xs font-semibold transition cursor-pointer"
-              >
-                {busy ? 'Đang lưu khoản chờ…' : `Tiếp tục với ${formatVND(draft.amount)}`}
-              </button>
+
             </>
           )}
 
@@ -529,45 +584,13 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
               </div>
 
               <div className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 space-y-3">
-                <p className="text-xs font-semibold text-[var(--ink-primary)]">
-                  Mở ngân hàng của bạn
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {BANK_OPTIONS.filter(bank => bank.name === selectedWallet?.name).map((bank) => {
-                    let deeplink: string;
-                    try { deeplink = buildBankAppDeeplink(bank.appId, {
-                      bankName: draft.bankName,
-                      accountNumber: draft.accountNumber,
-                      amount: draft.amount,
-                      transferNote: draft.transferNote,
-                    }); } catch { return null; }
-                    return (
-                      <a
-                        key={bank.id}
-                        href={deeplink}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={() => {
-                          onNotify(
-                            `Đang mở ${bank.name}. Sau khi chuyển xong, hãy xác nhận lại.`,
-                            'neutral'
-                          );
-                        }}
-                        className={`py-2.5 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition ${
-                          bank.name === selectedWallet?.name
-                            ? 'bg-[var(--ink-primary)] text-[var(--tone-white)] border-[var(--ink-primary)]'
-                            : 'bg-[var(--bg-canvas)] text-[var(--ink-primary)] border-[var(--border-hairline)] hover:border-[var(--ink-primary)]'
-                        }`}
-                      >
-                        <span>{bank.name}</span>
-                        <ExternalLink className="w-3 h-3" strokeWidth={1.75} />
-                      </a>
-                    );
-                  })}
-                </div>
-
-                <p className="text-sm text-[var(--ink-muted)]">Một số ngân hàng chỉ hỗ trợ mở ứng dụng, cần nhập lại thông tin. Kiểm tra người nhận trong app ngân hàng. Ví An không tự chuyển tiền hay tự xác nhận kết quả.</p>
-                <p className="helper-text">Sổ đang trừ từ {selectedWallet?.name}. Hãy chuyển từ đúng tài khoản này; nếu dùng ví khác, hủy khoản chờ và chọn lại ví.</p>
+                <div className="qr-handoff-heading"><span className="qr-bank-mark"><Landmark size={24} /></span><div><h3>{senderBank?.name || selectedWallet?.name}</h3><p className="helper-text">Khoản chờ đã lưu, chưa xác nhận đã chuyển.</p></div></div>
+                <p role="status" className="helper-text">{launchStatus || 'Chạm nút bên dưới để mở ngân hàng.'}</p>
+                {bankLink && <a href={launchHref} target="_blank" rel="noopener noreferrer" className="qr-launch" aria-disabled={busy} tabIndex={busy ? -1 : undefined} onClick={e => { if (busy) { e.preventDefault(); return; } if (!senderBank?.autofill) void handleCopy(draft.accountNumber, 'account'); setLaunchStatus('Đã gửi yêu cầu mở app. Khi chuyển xong, quay lại đây xác nhận.'); }}>
+                  <span>{senderBank && !senderBank.autofill ? 'Chép STK & mở' : 'Mở'} {senderBank?.name}</span><ExternalLink size={18} />
+                </a>}
+                {launchHref !== bankLink && <a href={bankLink} target="_blank" rel="noopener noreferrer" className="qr-alternate" aria-disabled={busy} tabIndex={busy ? -1 : undefined} onClick={e => { if (busy) e.preventDefault(); }}>Thử mở qua VietQR <ExternalLink size={14} /></a>}
+                <p className="helper-text">{senderBank?.autofill ? 'Kiểm tra người nhận và số tiền trong ứng dụng ngân hàng trước khi chuyển.' : 'Ngân hàng này chưa hỗ trợ tự điền. Chép số tài khoản bên dưới để dán vào app.'}</p>
                 {/* Copy STK & Note */}
                 <div className="pt-2.5 border-t border-[var(--border-hairline)] space-y-2 text-xs">
                   <div className="flex items-center justify-between gap-2">
@@ -613,7 +636,7 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
 
               <div className="bg-[var(--tone-white)] border border-[var(--border-hairline)] rounded-2xl p-4 space-y-3">
                 <p className="text-xs font-semibold text-[var(--ink-primary)] tabular-nums">
-                  2. Bạn đã chuyển {formatVND(draft.amount)} thành công chưa?
+                  Bạn đã chuyển {formatVND(draft.amount)} thành công chưa?
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -636,7 +659,20 @@ export const QrPaymentDrawer: React.FC<QrPaymentDrawerProps> = ({
               </div>
             </>
           )}
+          </fieldset>
         </div>
+        {step === 2 && <div className="qr-footer">
+              {linkError && <p role="alert" className="helper-text">{linkError}</p>}
+              {selectedWallet && draft.amount > selectedWallet.balance && <p role="alert" className="helper-text">Ví này chưa đủ số dư trong sổ. Kiểm tra lại ví hoặc số tiền.</p>}
+              <button
+                type="button"
+                onClick={handleLaunchBank}
+                disabled={busy || !canLaunch}
+                className="qr-launch"
+              >
+                {busy ? <><LoaderCircle className="qr-spinner" size={18} /> Đang lưu khoản chờ…</> : <><span>{senderBank && !senderBank.autofill ? 'Chép STK & mở' : 'Mở'} {senderBank?.name || 'ngân hàng'}<small>{formatVND(draft.amount)}</small></span><ArrowUpRight size={22} /></>}
+              </button>
+        </div>}
       </div>
     </div>
   );

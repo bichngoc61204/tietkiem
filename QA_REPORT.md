@@ -1,5 +1,23 @@
 # Kết quả kiểm thử ngày 25/11/2026
 
+## Lượt sửa QR và UX mới nhất
+
+- `npm test`: 57 ca qua. Bổ sung kiểm tra thứ tự giữ cửa sổ → lưu khoản chờ → mở ngân hàng; lưu lỗi không mở; popup bị chặn vẫn có trạng thái chờ và retry; mã app VPBank/MyVIB; route riêng VCB iOS. Hai kỳ vọng test cũ được đồng bộ với bộ tính ngân sách hiện tại (chia số dư nhỏ theo ngày còn lại và `walletLimit` là số dư thô); không sửa bộ tính tiền ở lượt này.
+- Build TypeScript/Vite qua. Cảnh báo chunk Firestore vẫn còn.
+- Browser QA 375×812 và 1280×900: không tràn ngang; QR tổng hợp đọc đúng người nhận MB Bank, STK, 35.000đ; chọn Vietcombank không bị ràng buộc tên ví. Tạo khoản chờ 35.000đ làm số dư QA giảm 12.385.000đ → 12.350.000đ; hủy trở về 12.385.000đ, không còn khoản chờ. Không thấy lỗi console trong luồng QA.
+- Nút mở app nằm ngoài vùng cuộn ở chân bảng. Tab cuối quay lại nút đóng; Escape trả focus về nút mở. CSS reduced motion có, chưa đổi thiết lập OS. Theme sáng đã nhìn; không có dark mode.
+- Đã đọc lại dữ liệu Firebase hiện tại qua local app: có ví ngân sách `vian`; chọn Vietcombank bật đúng nút mở. Không ghi thêm, reset hay khôi phục dữ liệu thật ở lượt sửa này. Đây chỉ là kiểm tra kết nối/đọc, chưa xác minh lại toàn bộ thao tác ghi với rules production mới. Có log Firebase được công cụ che nội dung, chưa thể kết luận nguyên nhân; snapshot vẫn tải và hiển thị.
+- Safari/iPhone + VCB: đã đối chiếu catalog và trang handoff VietQR; VCB `autofill=0`, trang iOS công bố `vietcombankmobile://`. Đã thêm route mở trực tiếp và HTTPS dự phòng; clipboard bắt đầu ngay trong lần chạm. Chưa kiểm chứng chuyển sang VCB, clipboard và camera trên iPhone thật. Yêu cầu điều hướng trên desktop không phải bằng chứng app đã mở.
+- Review độc lập Hallmark: 2 phát hiện đã sửa và xác minh trên browser: đổi ngân hàng gửi giữ nguyên ví ghi chi đã chọn; STK 34 ký tự xuống dòng, không chạm nút chép (khoảng cách 12px, không tràn ngang). Thêm ví phụ 0đ vào fixture QA để tái hiện lựa chọn nhiều ví.
+- Static sweep các file thay đổi: 0 FAIL, 0 WARN, 3 WAIVED (2 spacing gốc Lucian + camera live), 2 DISMISSED có lý do (bank choices là lựa chọn ngang hàng, đoạn 30ch là caption).
+- Production https://tietkiem-black.vercel.app/ đã mở được trang đăng nhập. Asset hiện tại `index-iikbLPC0.js` là bản cũ; không đăng nhập production để ghi dữ liệu.
+- Không sửa dịch vụ ghi tiền hay rules; bộ emulator 13 ca là kết quả lượt trước, chưa chạy lại ở lượt này.
+
+## Các kiểm tra ở lượt trước
+
+Các số dư, nút khôi phục và quyền truy cập bên dưới là lịch sử tại thời điểm kiểm tra trước. Sau đó người dùng đã cập nhật ứng dụng và dữ liệu; không coi các giá trị này là hiện trạng.
+
+
 ## Kiểm tra logic trừ tiền
 
 - Giữ tiền QR chỉ trừ một lần; xác nhận lặp không trừ thêm.
@@ -22,7 +40,7 @@
 
 ## Kiểm thử tự động
 
-- `npm test`: 49 ca qua, dùng adapter giao dịch tách biệt.
+- Ở lượt trước, `npm test`: 49 ca qua, dùng adapter giao dịch tách biệt.
 - `npm run test:emulator`: 13 ca qua trên Firestore Emulator, với SDK và file rules thật, gồm chặn truy cập khác chủ ví, ví âm và chưa đăng nhập.
 - Kiểm tra bundle production: không chứa tài khoản hay kho dữ liệu QA.
 - `npm run build`: TypeScript và Vite build qua. Có cảnh báo kích thước chunk Firestore (~560 KB thô); QR và các màn hình phụ đã tách tải theo nhu cầu.
@@ -53,8 +71,8 @@ Dùng bản QA tách biệt tại `127.0.0.1:5174`, không ghi tài khoản th�
 
 ## Còn cần kiểm chứng thực tế
 
-- Chưa publish rules mới hoặc triển khai frontend lên hosting production. Firebase Console đang yêu cầu đăng nhập Google có quyền dự án `tietkiem-18e06`; Firebase CLI cũng chưa có phiên đăng nhập. Cần hoàn thành bước đó để test lại thu nhập, QR hủy và hoàn tác trên production.
+- Người dùng báo đã thay rules và đã triển khai frontend trên Vercel. Bản sửa QR/UX mới nhất hiện nằm trong workspace; cần đối chiếu deployment mới trước khi kết luận production đã có bản sửa.
 - Chưa mở/chuyển tiền trong ứng dụng ngân hàng thật. Hỗ trợ autofill phụ thuộc ngân hàng; kết quả mở deeplink không phải kết quả thanh toán.
 - Chưa kiểm tra camera vật lý, bàn phím iOS/Android hay mạng chập chờn trên điện thoại thật.
 - Dữ liệu cũ thiếu liên kết khoản dự trù/ngày hạch toán có thể cần đối chiếu hoặc reset riêng. Không tự sửa số tiền đã tích lũy trước đây bằng suy đoán.
-- Thư mục ban đầu không có `.git`; không có baseline Git để xuất diff lịch sử hoặc push vào repository ứng dụng. Các repo hướng dẫn đã được tải bằng Git để tham khảo, không tạo remote ứng dụng mới.
+- Workspace hiện đã có Git, remote `bichngoc61204/tietkiem`, nhánh `main`. Lượt sửa này chưa commit hoặc push; các file build được theo dõi trong repo cũng thay đổi sau build.

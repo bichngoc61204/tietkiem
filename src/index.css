@@ -1,5 +1,6 @@
 /* Hallmark v2 · scope: app · brand: Ví An · shape: app screen · signature: daily spending ledger */
 /* Critique: prioritize QR and spendable money, with readable controls and verified save states. */
+/* Hallmark · dismissed 25 · The daily-budget paragraph is a short caption inside the narrow money card, not a prose column. */
 @import "tailwindcss";
 @import "./tokens.css";
 
@@ -281,3 +282,23 @@ h1,h2 { text-wrap:balance; }
 .budget-label h1 { font:inherit; margin:0; }
 summary:focus-visible { outline:2px solid var(--brand); outline-offset:3px; }
 summary { min-height:44px; display:list-item; align-content:center; }
+
+/* Softer surfaces and short, tactile feedback for the daily mobile flow. */
+:root { --accent-peach:#f8e6d9; --ink-peach:#77492d; --ease-spring:var(--ease); }
+.daily-budget { border-radius:28px; box-shadow:0 12px 28px -20px var(--shadow); }
+.scan-button { border-radius:20px; transition:transform .35s var(--ease-spring),background-color .16s; }
+.scan-button > svg { transition:transform .35s var(--ease-spring); }
+.scan-button:active > svg { transform:rotate(-7deg) scale(.94); }
+.quick-actions button { border-radius:22px; gap:8px; min-height:104px; transition:background-color .16s,transform .35s var(--ease-spring); }
+.quick-actions svg { box-sizing:content-box; width:22px; height:22px; padding:12px; border-radius:16px; background:var(--brand-light); color:var(--brand); }
+.quick-actions button:nth-child(2) svg { background:var(--accent-peach); color:var(--ink-peach); }
+.wallet-overview { padding:20px; border:1px solid var(--border-hairline); border-radius:24px; background:var(--bg-surface); }
+.mobile-nav > button:not(.nav-scan) { position:relative; isolation:isolate; border-radius:18px; transition:color .2s,transform .35s var(--ease-spring); }
+.mobile-nav > button:not(.nav-scan)::before { content:''; position:absolute; z-index:-1; top:0; left:50%; width:48px; height:32px; border-radius:14px; background:var(--brand-light); opacity:0; transform:translateX(-50%) scale(.75); transition:opacity .2s,transform .35s var(--ease-spring); }
+.mobile-nav > button[aria-current=page]::before { opacity:1; transform:translateX(-50%) scale(1); }
+.mobile-nav > button:active { transform:scale(.95); }
+.mobile-nav > button > svg,.mobile-nav > button > div > svg { transition:transform .35s var(--ease-spring); }
+.mobile-nav > button[aria-current=page] > svg,.mobile-nav > button[aria-current=page] > div > svg { transform:translateY(-1px); }
+@media(prefers-reduced-motion:reduce) {
+  .scan-button:active,.scan-button:active > svg,.quick-actions button:active,.mobile-nav > button:active,.qr-payment .qr-bank:active,.qr-payment .qr-launch:active { transform:none; }
+}

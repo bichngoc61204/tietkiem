@@ -46,7 +46,7 @@ licenseKeys/{code}                    // Kho mã bản quyền để bán tài k
 
 Mọi thao tác làm thay đổi số dư dùng `runTransaction`: đọc trạng thái mới nhất, kiểm tra số dư rồi ghi đồng thời ví và giao dịch. Không cập nhật thành công trên giao diện trước khi Firestore commit. Snapshot là nguồn dữ liệu hiển thị.
 
-- QR: tiếp tục ở bước 2 tạo `pending` và giữ tiền trong sổ; bước 3 mở ứng dụng ngân hàng của đúng ví nguồn. Web không tự chuyển tiền hay nhận kết quả từ ngân hàng.
+- QR: ở bước 2 chọn ngân hàng gửi và ví ghi chi (ưu tiên ngân sách `vian`), nút mở app tạo `pending` và giữ tiền trong sổ trước khi điều hướng. Ngân hàng gửi độc lập với ngân sách hạch toán. Bước 3 giữ liên kết mở lại và xác nhận/hủy. Web không tự chuyển tiền hay nhận kết quả từ ngân hàng.
 - Xác nhận QR chỉ đổi trạng thái; không trừ lần hai. Hủy chỉ áp dụng với giao dịch đang `pending`, hoàn tiền một lần.
 - Giao dịch hủy/hoàn tác giữ bản ghi `cancelled`/`deleted` để chống hoàn tiền lặp; danh sách thông thường lọc hai trạng thái này.
 - `income` cộng ví; hoàn tác thu nhập trừ ví và không cho số dư âm.
